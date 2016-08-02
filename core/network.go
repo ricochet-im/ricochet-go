@@ -2,7 +2,7 @@ package core
 
 import (
 	"errors"
-	"github.com/special/ricochet-go/core/utils"
+	"github.com/special/notricochet/core/utils"
 	"github.com/yawning/bulb"
 	bulbutils "github.com/yawning/bulb/utils"
 	"log"

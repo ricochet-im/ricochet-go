@@ -1,7 +1,7 @@
 package main
 
 import (
-	rpc "github.com/special/ricochet-go/rpc"
+	rpc "github.com/special/notricochet/rpc"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"

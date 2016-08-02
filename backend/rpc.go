@@ -2,8 +2,8 @@ package main
 
 import (
 	"errors"
-	ricochet "github.com/special/ricochet-go/core"
-	rpc "github.com/special/ricochet-go/rpc"
+	ricochet "github.com/special/notricochet/core"
+	rpc "github.com/special/notricochet/rpc"
 	"golang.org/x/net/context"
 	"log"
 )
