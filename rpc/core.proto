@@ -1,0 +1,22 @@
+syntax = "proto3";
+package ricochet;
+
+import "network.proto";
+
+service RicochetCore {
+    rpc GetServerStatus (ServerStatusRequest) returns (ServerStatusReply);
+
+    rpc MonitorNetwork (MonitorNetworkRequest) returns (stream NetworkStatus);
+    rpc StartNetwork (StartNetworkRequest) returns (NetworkStatus);
+    rpc StopNetwork (StopNetworkRequest) returns (NetworkStatus);
+}
+
+message ServerStatusRequest {
+    int32 rpcVersion = 1;
+}
+
+message ServerStatusReply {
+    int32 rpcVersion = 1;
+    string serverVersion = 2;
+}
+

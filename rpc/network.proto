@@ -1,0 +1,53 @@
+syntax = "proto3";
+package ricochet;
+
+message MonitorNetworkRequest {
+}
+
+message TorProcessStatus {
+    enum Status {
+        DISABLED = 0;
+        STOPPED = 1;
+        STARTING = 2;
+        RUNNING = 3;
+    }
+    Status status = 1;
+    string errorMessage = 2;
+}
+
+message TorControlStatus {
+    enum Status {
+        STOPPED = 0;
+        ERROR = 1;
+        CONNECTING = 2;
+        CONNECTED = 3;
+    }
+    Status status = 1;
+    string errorMessage = 2;
+
+    string torVersion = 10;
+}
+
+message TorConnectionStatus {
+    enum Status {
+        UNKNOWN = 0;
+        OFFLINE = 1;
+        BOOTSTRAPPING = 2;
+        READY = 3;
+    }
+    Status status = 1;
+
+    string bootstrapProgress = 10;
+}
+
+message NetworkStatus {
+    TorProcessStatus process = 1;
+    TorControlStatus control = 2;
+    TorConnectionStatus connection = 3;
+}
+
+message StartNetworkRequest {
+}
+
+message StopNetworkRequest {
+}
