@@ -1,6 +1,7 @@
 package main
 
 import (
+	ricochet "github.com/special/ricochet-go/core"
 	rpc "github.com/special/ricochet-go/rpc"
 	"google.golang.org/grpc"
 	"log"
@@ -16,7 +17,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("listen failed: %v", err)
 	}
+
+	config, err := ricochet.LoadConfig(".")
+	if err != nil {
+		log.Fatalf("config error: %v", err)
+	}
+
+	ricochet := &RicochetCore{
+		Network: ricochet.CreateNetwork(),
+		Config:  config,
+	}
+
 	rpcServer := grpc.NewServer()
-	rpc.RegisterRicochetCoreServer(rpcServer, &RicochetCore{})
+	rpc.RegisterRicochetCoreServer(rpcServer, ricochet)
 	rpcServer.Serve(listener)
 }

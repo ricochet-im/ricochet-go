@@ -47,8 +47,15 @@ func main() {
 			}
 			log.Printf("stream says: %v", resp)
 		}
-		wait <- struct{}{}
+		close(wait)
 	}()
+
+	status, err := c.StartNetwork(context.Background(), &rpc.StartNetworkRequest{})
+	if err != nil {
+		log.Printf("start network error: %v", err)
+	} else {
+		log.Printf("network started: %v", status)
+	}
 
 	<-wait
 }
