@@ -25,24 +25,25 @@ func (core *RicochetCore) GetServerStatus(ctx context.Context, req *rpc.ServerSt
 }
 
 func (core *RicochetCore) MonitorNetwork(req *rpc.MonitorNetworkRequest, stream rpc.RicochetCore_MonitorNetworkServer) error {
-	status := &rpc.NetworkStatus{
-		Control: &rpc.TorControlStatus{
-			Status:       rpc.TorControlStatus_ERROR,
-			ErrorMessage: "Not implemented",
-		},
-	}
-
 	events := core.Network.EventMonitor().Subscribe(20)
 	defer core.Network.EventMonitor().Unsubscribe(events)
 
+	// Send initial status event
+	{
+		event := core.Network.GetStatus()
+		if err := stream.Send(&event); err != nil {
+			return err
+		}
+	}
+
 	for {
-		event, ok := (<-events).(bool)
+		event, ok := (<-events).(rpc.NetworkStatus)
 		if !ok {
 			break
 		}
 
 		log.Printf("RPC monitor event: %v", event)
-		if err := stream.Send(status); err != nil {
+		if err := stream.Send(&event); err != nil {
 			return err
 		}
 	}
@@ -58,15 +59,12 @@ func (core *RicochetCore) StartNetwork(ctx context.Context, req *rpc.StartNetwor
 		return nil, err
 	}
 
-	// XXX real status
-	return &rpc.NetworkStatus{
-		Control: &rpc.TorControlStatus{
-			Status: rpc.TorControlStatus_CONNECTED,
-		},
-	}, nil
+	status := core.Network.GetStatus()
+	return &status, nil
 }
 
 func (core *RicochetCore) StopNetwork(ctx context.Context, req *rpc.StopNetworkRequest) (*rpc.NetworkStatus, error) {
 	core.Network.Stop()
-	return &rpc.NetworkStatus{}, nil
+	status := core.Network.GetStatus()
+	return &status, nil
 }
