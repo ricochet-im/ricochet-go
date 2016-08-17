@@ -13,6 +13,8 @@ type RicochetCore struct {
 	Config  *ricochet.Config
 }
 
+var NotImplementedError error = errors.New("Not implemented")
+
 func (core *RicochetCore) GetServerStatus(ctx context.Context, req *rpc.ServerStatusRequest) (*rpc.ServerStatusReply, error) {
 	if req.RpcVersion != 1 {
 		return nil, errors.New("Unsupported RPC protocol version")
@@ -67,4 +69,36 @@ func (core *RicochetCore) StopNetwork(ctx context.Context, req *rpc.StopNetworkR
 	core.Network.Stop()
 	status := core.Network.GetStatus()
 	return &status, nil
+}
+
+func (core *RicochetCore) GetIdentity(ctx context.Context, req *rpc.IdentityRequest) (*rpc.Identity, error) {
+	return nil, NotImplementedError
+}
+
+func (core *RicochetCore) MonitorContacts(req *rpc.MonitorContactsRequest, stream rpc.RicochetCore_MonitorContactsServer) error {
+	return NotImplementedError
+}
+
+func (core *RicochetCore) AddContactRequest(ctx context.Context, req *rpc.ContactRequest) (*rpc.Contact, error) {
+	return nil, NotImplementedError
+}
+
+func (core *RicochetCore) UpdateContact(ctx context.Context, req *rpc.Contact) (*rpc.Contact, error) {
+	return nil, NotImplementedError
+}
+
+func (core *RicochetCore) DeleteContact(ctx context.Context, req *rpc.DeleteContactRequest) (*rpc.DeleteContactReply, error) {
+	return nil, NotImplementedError
+}
+
+func (core *RicochetCore) AcceptInboundRequest(ctx context.Context, req *rpc.ContactRequest) (*rpc.Contact, error) {
+	return nil, NotImplementedError
+}
+
+func (core *RicochetCore) RejectInboundRequest(ctx context.Context, req *rpc.ContactRequest) (*rpc.RejectInboundRequestReply, error) {
+	return nil, NotImplementedError
+}
+
+func (core *RicochetCore) StreamConversations(stream rpc.RicochetCore_StreamConversationsServer) error {
+	return NotImplementedError
 }

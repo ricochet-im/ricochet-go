@@ -38,6 +38,7 @@ message TorConnectionStatus {
     Status status = 1;
 
     string bootstrapProgress = 10;
+    repeated string socksAddress = 11;
 }
 
 message NetworkStatus {

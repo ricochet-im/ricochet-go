@@ -1,0 +1,43 @@
+syntax = "proto3";
+package ricochet;
+
+message ConversationEvent {
+    enum Type {
+        NULL = 0;
+        POPULATE = 1;
+        RECEIVE = 2;
+        SEND = 3;
+        UPDATE = 4;
+    }
+    Type type = 1;
+
+    Message msg = 2;
+}
+
+message Entity {
+    // null is self
+    int32 contactId = 1;
+    string address = 2;
+}
+
+message Message {
+    Entity sender = 1;
+    Entity recipient = 2;
+    int64 timestamp = 3;
+    // Identifiers are unique _only_ to a sender/recipient pair in a session
+    // XXX This is a silly thing to perpetuate; should we UUID?
+    uint32 identifier = 4;
+
+    enum Status {
+        NULL = 0;
+        RECEIVED = 1;
+        QUEUED = 2;
+        SENDING = 3;
+        DELIVERED = 4;
+        ERROR = 5;
+    }
+    Status status = 5;
+
+    string text = 6;
+}
+

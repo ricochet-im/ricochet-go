@@ -1,0 +1,9 @@
+syntax = "proto3";
+package ricochet;
+
+message Identity {
+    string address = 1;
+}
+
+message IdentityRequest {
+}

@@ -2,13 +2,42 @@ syntax = "proto3";
 package ricochet;
 
 import "network.proto";
+import "identity.proto";
+import "contact.proto";
+import "conversation.proto";
 
 service RicochetCore {
+    // Query RPC server version and status
     rpc GetServerStatus (ServerStatusRequest) returns (ServerStatusReply);
 
+    // Open a stream to monitor changes to network status. The current
+    // NetworkStatus will be sent immediately, and the stream will receive a
+    // new NetworkStatus after any changes until the stream is closed.
     rpc MonitorNetwork (MonitorNetworkRequest) returns (stream NetworkStatus);
+    // Start connecting to the network. Before StartNetwork is called (by any
+    // client), the backend will not make any connections or appear online.
+    // This call blocks until the first connection attempt succeeds or fails,
+    // and returns the current network status, but connection attempts will
+    // continue unless this call returns an RPC error, or until StopNetwork
+    // is called.
     rpc StartNetwork (StartNetworkRequest) returns (NetworkStatus);
+    // Stop all network connections and go offline. Blocks until the network
+    // has been taken offline, and returns the new network status.
     rpc StopNetwork (StopNetworkRequest) returns (NetworkStatus);
+
+    // XXX Config (tor, etc)
+
+    // XXX Service status
+    rpc GetIdentity (IdentityRequest) returns (Identity);
+
+    rpc MonitorContacts (MonitorContactsRequest) returns (stream ContactEvent);
+    rpc AddContactRequest (ContactRequest) returns (Contact);
+    rpc UpdateContact (Contact) returns (Contact);
+    rpc DeleteContact (DeleteContactRequest) returns (DeleteContactReply);
+    rpc AcceptInboundRequest (ContactRequest) returns (Contact);
+    rpc RejectInboundRequest (ContactRequest) returns (RejectInboundRequestReply);
+
+    rpc StreamConversations (stream ConversationEvent) returns (stream ConversationEvent);
 }
 
 message ServerStatusRequest {
