@@ -7,6 +7,7 @@ import (
 	"github.com/yawning/bulb"
 	bulbutils "github.com/yawning/bulb/utils"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -125,14 +126,6 @@ func (n *Network) run(connectChannel chan<- error) {
 		// Attempt connection
 		conn, err := createConnection(n.controlAddress, n.controlPassword)
 
-		// Report result of the first connection attempt
-		// XXX too early, because of post-connection work
-		if connectChannel != nil {
-			connectChannel <- err
-			close(connectChannel)
-			connectChannel = nil
-		}
-
 		retryChannel := make(chan error, 1)
 
 		if err == nil {
@@ -140,35 +133,43 @@ func (n *Network) run(connectChannel chan<- error) {
 			// control events. On connection failure (or close as a result of
 			// stop), signal retryChannel.
 
-			// XXX TODO: post-connect queries
-
-			// Status to CONNECTED
-			n.controlMutex.Lock()
-			n.conn = conn
-			n.status.Control = &ricochet.TorControlStatus{
-				Status:     ricochet.TorControlStatus_CONNECTED,
-				TorVersion: "XXX", // XXX
-			}
-			// XXX Fake connection status
-			n.status.Connection = &ricochet.TorConnectionStatus{
-				Status: ricochet.TorConnectionStatus_READY,
-			}
-			status := n.status
-			n.controlMutex.Unlock()
-			n.events.Publish(status)
-
-			go func() {
-				for {
-					event, err := conn.NextEvent()
-					if err != nil {
-						log.Printf("Control connection failed: %v", err)
-						retryChannel <- err
-						break
-					}
-					// XXX handle event
-					log.Printf("Control event: %v", event)
+			// Query ProtocolInfo for tor version
+			pinfo, err := conn.ProtocolInfo()
+			if err != nil {
+				log.Printf("Control protocolinfo failed: %v", err)
+				retryChannel <- err
+			} else {
+				// Status to CONNECTED
+				n.controlMutex.Lock()
+				n.conn = conn
+				n.status.Control = &ricochet.TorControlStatus{
+					Status:     ricochet.TorControlStatus_CONNECTED,
+					TorVersion: pinfo.TorVersion,
 				}
-			}()
+				n.status.Connection = &ricochet.TorConnectionStatus{}
+				status := n.status
+				n.controlMutex.Unlock()
+				n.events.Publish(status)
+
+				// Query initial tor state and subscribe to events
+				if err := n.updateTorState(); err != nil {
+					log.Printf("Control state query failed: %v", err)
+					// Signal error to terminate connection
+					retryChannel <- err
+				} else {
+					// Report result of the first connection attempt
+					if connectChannel != nil {
+						connectChannel <- err
+						close(connectChannel)
+						connectChannel = nil
+					}
+
+					// Goroutine polls for control events; retryChannel is
+					// signalled on connection failure. Block on retryChannel
+					// below.
+					go n.handleControlEvents(conn, retryChannel)
+				}
+			}
 		} else {
 			// Status to ERROR
 			n.controlMutex.Lock()
@@ -257,13 +258,122 @@ func createConnection(address, password string) (*bulb.Conn, error) {
 
 	conn.StartAsyncReader()
 
-	// XXX
-	if _, err := conn.Request("SETEVENTS STATUS_CLIENT"); err != nil {
-		log.Printf("Control events failed: %v", err)
-		conn.Close()
-		return nil, err
-	}
-
 	log.Print("Control connected!")
 	return conn, nil
+}
+
+/* XXX The CIRCUIT_ESTABLISHED based connectivity logic is buggy and not
+ * reliable. We may not see CIRCUIT_ESTABLISHED if tor goes dormant due to
+ * no activity, and CIRCUIT_NOT_ESTABLISHED is _only_ sent for clock jumps,
+ * not any other case. For now, this is still worth using, because it at
+ * least gives a decent idea of when startup has finished and detects
+ * suspends from the clock jump.
+ *
+ * Tor also has a NETWORK_LIVENESS, but this is even less useful. In testing,
+ * it's entirely unable to determine when tor loses connectivity.
+ *
+ * The most reliable indicator of connectivity is probably to track active
+ * circs or orconns and assume connectivity if there is at least one built or
+ * connected. This is a little more complex, but would give us better behavior
+ * for figuring out when reconnection is necessary and whether we're connectable.
+ * If we start tracking circuits, we could also use those to gain more insight
+ * into the connectivity state of our services, the number of rendezvous, and
+ * reasons for failed outbound connections.
+ */
+
+func (n *Network) updateTorState() error {
+	if _, err := n.conn.Request("SETEVENTS STATUS_CLIENT"); err != nil {
+		return err
+	}
+
+	response, err := n.conn.Request("GETINFO status/circuit-established status/bootstrap-phase net/listeners/socks")
+	if err != nil {
+		return err
+	}
+
+	results := make(map[string]string)
+	for _, rawLine := range response.Data {
+		line := strings.SplitN(rawLine, "=", 2)
+		if len(line) != 2 {
+			return errors.New("Invalid GETINFO response format")
+		}
+		results[line[0]] = strings.TrimSpace(line[1])
+		log.Printf("'%v' = '%v'", line[0], results[line[0]])
+	}
+
+	var connStatus ricochet.TorConnectionStatus_Status
+	if results["status/circuit-established"] == "0" {
+		if strings.Contains(results["status/bootstrap-phase"], "TAG=done") {
+			connStatus = ricochet.TorConnectionStatus_OFFLINE
+		} else {
+			connStatus = ricochet.TorConnectionStatus_BOOTSTRAPPING
+		}
+	} else if results["status/circuit-established"] == "1" {
+		connStatus = ricochet.TorConnectionStatus_READY
+	} else {
+		return errors.New("Invalid GETINFO response format")
+	}
+
+	socksAddresses := utils.UnquoteStringSplit(results["net/listeners/socks"], ' ')
+
+	n.controlMutex.Lock()
+	n.status.Connection = &ricochet.TorConnectionStatus{
+		Status:            connStatus,
+		BootstrapProgress: results["status/bootstrap-phase"],
+		SocksAddress:      socksAddresses,
+	}
+	status := n.status
+	n.controlMutex.Unlock()
+	n.events.Publish(status)
+
+	return nil
+}
+
+func (n *Network) handleControlEvents(conn *bulb.Conn, errorChannel chan<- error) {
+	for {
+		event, err := conn.NextEvent()
+		if err != nil {
+			log.Printf("Control connection failed: %v", err)
+			errorChannel <- err
+			return
+		}
+
+		if strings.HasPrefix(event.Reply, "STATUS_CLIENT ") ||
+			strings.HasPrefix(event.Reply, "STATUS_GENERAL ") {
+			// StatusType StatusSeverity StatusAction StatusArguments
+			eventInfo := strings.SplitN(event.Reply, " ", 4)
+			if len(eventInfo) < 3 {
+				log.Printf("Ignoring malformed control status event")
+				continue
+			}
+
+			n.controlMutex.Lock()
+			changed := true
+			// Cannot directly modify n.status.Connection, because it may be shared; take a copy
+			connStatus := *n.status.Connection
+
+			if eventInfo[2] == "CIRCUIT_ESTABLISHED" {
+				connStatus.Status = ricochet.TorConnectionStatus_READY
+			} else if eventInfo[2] == "CIRCUIT_NOT_ESTABLISHED" {
+				if strings.Contains(connStatus.BootstrapProgress, "TAG=done") {
+					connStatus.Status = ricochet.TorConnectionStatus_OFFLINE
+				} else {
+					connStatus.Status = ricochet.TorConnectionStatus_BOOTSTRAPPING
+				}
+			} else if eventInfo[2] == "BOOTSTRAP" {
+				connStatus.BootstrapProgress = strings.Join(eventInfo[1:], " ")
+			} else {
+				changed = false
+			}
+
+			if changed {
+				n.status.Connection = &connStatus
+				status := n.status
+				n.controlMutex.Unlock()
+				n.events.Publish(status)
+			} else {
+				n.controlMutex.Unlock()
+			}
+		}
+	}
 }
