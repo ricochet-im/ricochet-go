@@ -1,12 +1,14 @@
 package core
 
 import (
+	"crypto"
 	"errors"
 	"github.com/special/notricochet/core/utils"
 	"github.com/special/notricochet/rpc"
 	"github.com/yawning/bulb"
 	bulbutils "github.com/yawning/bulb/utils"
 	"log"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +38,14 @@ type Network struct {
 	// pointers and may be shared. Instead, construct a new TorControlStatus
 	// et al for each change.
 	status ricochet.NetworkStatus
+
+	onions []*OnionService
+}
+
+type OnionService struct {
+	OnionID    string
+	Ports      []bulb.OnionPortSpec
+	PrivateKey crypto.PrivateKey
 }
 
 func CreateNetwork() *Network {
@@ -106,6 +116,98 @@ func (n *Network) GetStatus() ricochet.NetworkStatus {
 	return status
 }
 
+// Return the control connection, blocking until connected if necessary
+// May return nil on failure, and the returned connection can be closed
+// or otherwise fail at any time.
+func (n *Network) getConnection() *bulb.Conn {
+	// Optimistically try to get a connection before subscribin to events
+	n.controlMutex.Lock()
+	conn := n.conn
+	n.controlMutex.Unlock()
+	if conn != nil {
+		return conn
+	}
+
+	// Subscribe to connectivity change events
+	monitor := n.EventMonitor().Subscribe(20)
+	defer n.EventMonitor().Unsubscribe(monitor)
+
+	for {
+		// Check for connectivity; do this before blocking to avoid a
+		// race with the subscription.
+		n.controlMutex.Lock()
+		conn := n.conn
+		n.controlMutex.Unlock()
+		if conn != nil {
+			return conn
+		}
+
+		_, ok := <-monitor
+		if !ok {
+			return nil
+		}
+	}
+}
+
+// Add an onion service with the provided port mappings and private key.
+// If key is nil, a new RSA key is generated and returned in OnionService.
+// This function will block until a control connection is available and
+// the service is added or the command has failed. If the control connection
+// is lost and reconnected, the service will be re-added automatically.
+// BUG: Errors that occur after reconnecting cannot be detected.
+func (n *Network) AddOnionPorts(ports []bulb.OnionPortSpec, key crypto.PrivateKey) (*OnionService, error) {
+	if key == nil {
+		// Ask for a new key, force RSA1024
+		key = &bulb.OnionPrivateKey{
+			KeyType: "NEW",
+			Key:     "RSA1024",
+		}
+	}
+
+	conn := n.getConnection()
+	info, err := conn.AddOnion(ports, key, false)
+	if err != nil {
+		return nil, err
+	}
+
+	service := &OnionService{
+		OnionID:    info.OnionID,
+		Ports:      ports,
+		PrivateKey: info.PrivateKey,
+	}
+
+	n.controlMutex.Lock()
+	n.onions = append(n.onions, service)
+	n.controlMutex.Unlock()
+	return service, nil
+}
+
+// Add an onion service listening on the virtual onion port onionPort,
+// with the provided private key, and return a net.Listener for it. This
+// function behaves identically to AddOnionPorts, other than creating a
+// listener automatically.
+func (n *Network) NewOnionListener(onionPort uint16, key crypto.PrivateKey) (*OnionService, net.Listener, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	onionPorts := []bulb.OnionPortSpec{
+		bulb.OnionPortSpec{
+			VirtPort: onionPort,
+			Target:   listener.Addr().String(),
+		},
+	}
+
+	service, err := n.AddOnionPorts(onionPorts, key)
+	if err != nil {
+		listener.Close()
+		return nil, nil, err
+	}
+
+	return service, listener, nil
+}
+
 func (n *Network) run(connectChannel chan<- error) {
 	n.controlMutex.Lock()
 	stopSignal := n.stopSignal
@@ -168,6 +270,9 @@ func (n *Network) run(connectChannel chan<- error) {
 					// signalled on connection failure. Block on retryChannel
 					// below.
 					go n.handleControlEvents(conn, retryChannel)
+
+					// Re-publish onion services
+					n.publishOnions()
 				}
 			}
 		} else {
@@ -375,5 +480,25 @@ func (n *Network) handleControlEvents(conn *bulb.Conn, errorChannel chan<- error
 				n.controlMutex.Unlock()
 			}
 		}
+	}
+}
+
+func (n *Network) publishOnions() {
+	n.controlMutex.Lock()
+	conn := n.conn
+	onions := make([]*OnionService, len(n.onions))
+	copy(onions, n.onions)
+	n.controlMutex.Unlock()
+
+	if conn == nil {
+		return
+	}
+
+	for _, service := range onions {
+		_, err := conn.AddOnion(service.Ports, service.PrivateKey, false)
+		if err != nil {
+			log.Printf("Control error for onion republication: %v", err)
+		}
+		log.Printf("Re-published onion service %s", service.OnionID)
 	}
 }
