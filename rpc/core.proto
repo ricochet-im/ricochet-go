@@ -30,6 +30,11 @@ service RicochetCore {
     // XXX Service status
     rpc GetIdentity (IdentityRequest) returns (Identity);
 
+    // Query contacts and monitor for contact changes. The full contact list
+    // is sent in POPULATE events, terminated by a POPULATE event with no
+    // subject. Any new, removed, or modified contacts, including changes in
+    // the state of contacts, are sent as ADD, UPDATE, or DELETE events until
+    // the stream is closed.
     rpc MonitorContacts (MonitorContactsRequest) returns (stream ContactEvent);
     rpc AddContactRequest (ContactRequest) returns (Contact);
     rpc UpdateContact (Contact) returns (Contact);

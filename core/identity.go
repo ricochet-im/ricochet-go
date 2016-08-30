@@ -9,6 +9,8 @@ import (
 )
 
 type Identity struct {
+	core Ricochet
+
 	address    string
 	privateKey *rsa.PrivateKey
 
@@ -16,35 +18,51 @@ type Identity struct {
 }
 
 func CreateIdentity(core Ricochet) (*Identity, error) {
-	me := &Identity{}
+	me := &Identity{
+		core: core,
+	}
 
-	config := core.Config().OpenRead()
+	err := me.loadIdentity()
+	if err != nil {
+		log.Printf("Loading identity failed: %v", err)
+		return nil, err
+	}
+
+	contactList, err := LoadContactList(core)
+	if err != nil {
+		log.Printf("Loading contact list failed: %v", err)
+		return nil, err
+	}
+	me.contactList = contactList
+
+	return me, nil
+}
+
+func (me *Identity) loadIdentity() error {
+	config := me.core.Config().OpenRead()
 	defer config.Close()
+
 	if config.Identity.ServiceKey != "" {
 		keyData, err := base64.StdEncoding.DecodeString(config.Identity.ServiceKey)
 		if err != nil {
-			log.Printf("Decoding identity key failed: %v", err)
-			return nil, err
+			return err
 		}
 
 		me.privateKey, _, err = pkcs1.DecodePrivateKeyDER(keyData)
 		if err != nil {
-			log.Printf("Decoding identity key failed: %v", err)
-			return nil, err
+			return err
 		}
 
 		me.address, err = pkcs1.OnionAddr(&me.privateKey.PublicKey)
-		if err != nil && me.address == "" {
-			err = errors.New("Cannot calculate onion address")
-		}
 		if err != nil {
-			log.Printf("Decoding identify key failed: %v", err)
-			return nil, err
+			return err
+		} else if me.address == "" {
+			return errors.New("Invalid onion address")
 		}
 		me.address = "ricochet:" + me.address
 	}
 
-	return me, nil
+	return nil
 }
 
 func (me *Identity) Address() string {

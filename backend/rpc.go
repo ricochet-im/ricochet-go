@@ -6,6 +6,7 @@ import (
 	rpc "github.com/special/notricochet/rpc"
 	"golang.org/x/net/context"
 	"log"
+	"time"
 )
 
 var NotImplementedError error = errors.New("Not implemented")
@@ -92,6 +93,36 @@ func (core *RicochetCore) GetIdentity(ctx context.Context, req *rpc.IdentityRequ
 }
 
 func (core *RicochetCore) MonitorContacts(req *rpc.MonitorContactsRequest, stream rpc.RicochetCore_MonitorContactsServer) error {
+	// Populate
+	contacts := core.Identity().ContactList().Contacts()
+	for _, contact := range contacts {
+		data := &rpc.Contact{
+			Id:            int32(contact.Id()),
+			Address:       contact.Address(),
+			Nickname:      contact.Nickname(),
+			WhenCreated:   contact.WhenCreated().Format(time.RFC3339),
+			LastConnected: contact.LastConnected().Format(time.RFC3339),
+		}
+		event := &rpc.ContactEvent{
+			Type: rpc.ContactEvent_POPULATE,
+			Subject: &rpc.ContactEvent_Contact{
+				Contact: data,
+			},
+		}
+		if err := stream.Send(event); err != nil {
+			return err
+		}
+	}
+	// Terminate populate list with a null subject
+	{
+		event := &rpc.ContactEvent{
+			Type: rpc.ContactEvent_POPULATE,
+		}
+		if err := stream.Send(event); err != nil {
+			return err
+		}
+	}
+
 	return NotImplementedError
 }
 

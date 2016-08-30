@@ -2,12 +2,40 @@ package core
 
 import (
 	"errors"
+	"fmt"
+	"strconv"
 )
 
 type ContactList struct {
 	contacts         map[int]*Contact
 	outboundRequests map[int]*OutboundContactRequest
 	inboundRequests  map[int]*InboundContactRequest
+}
+
+func LoadContactList(core Ricochet) (*ContactList, error) {
+	list := &ContactList{}
+	config := core.Config().OpenRead()
+	defer config.Close()
+
+	list.contacts = make(map[int]*Contact, len(config.Contacts))
+	for idStr, data := range config.Contacts {
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid contact id '%s'", idStr)
+		}
+		if _, exists := list.contacts[id]; exists {
+			return nil, fmt.Errorf("Duplicate contact id '%d'", id)
+		}
+
+		contact, err := ContactFromConfig(id, data)
+		if err != nil {
+			return nil, err
+		}
+		list.contacts[id] = contact
+	}
+
+	// XXX Requests aren't implemented
+	return list, nil
 }
 
 func (this *ContactList) Contacts() []*Contact {
@@ -40,7 +68,7 @@ func (this *ContactList) ContactById(id int) *Contact {
 
 func (this *ContactList) ContactByAddress(address string) *Contact {
 	for _, contact := range this.contacts {
-		if contact.Address == address {
+		if contact.Address() == address {
 			return contact
 		}
 	}

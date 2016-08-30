@@ -109,6 +109,23 @@ func main() {
 			} else {
 				log.Printf("network stopped: %v", status)
 			}
+		case "contacts":
+			stream, err := c.Backend.MonitorContacts(context.Background(), &rpc.MonitorContactsRequest{})
+			if err != nil {
+				log.Printf("contacts error: %v", err)
+			} else {
+				for {
+					event, err := stream.Recv()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						log.Printf("contacts error: %v", err)
+						break
+					}
+					log.Printf("contact event: %v", event)
+				}
+			}
 		case "help":
 			fallthrough
 		default:
