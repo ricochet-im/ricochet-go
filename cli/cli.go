@@ -88,6 +88,13 @@ func main() {
 				log.Fatalf("could not get status: %v", err)
 			}
 			log.Printf("get status result: %v", r)
+
+			identity, err := c.Backend.GetIdentity(context.Background(), &rpc.IdentityRequest{})
+			if err != nil {
+				log.Fatalf("could not get identity: %v", err)
+			}
+			log.Printf("identity: %v", identity)
+
 		case "connect":
 			status, err := c.Backend.StartNetwork(context.Background(), &rpc.StartNetworkRequest{})
 			if err != nil {

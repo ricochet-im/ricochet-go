@@ -23,12 +23,16 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
-	ricochet := &RicochetCore{
-		Network: ricochet.CreateNetwork(),
-		Config:  config,
+	core := &RicochetCore{
+		config: config,
+	}
+	core.network = ricochet.CreateNetwork()
+	core.identity, err = ricochet.CreateIdentity(core)
+	if err != nil {
+		log.Fatalf("identity error: %v", err)
 	}
 
 	rpcServer := grpc.NewServer()
-	rpc.RegisterRicochetCoreServer(rpcServer, ricochet)
+	rpc.RegisterRicochetCoreServer(rpcServer, core)
 	rpcServer.Serve(listener)
 }
