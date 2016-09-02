@@ -93,6 +93,9 @@ func (core *RicochetCore) GetIdentity(ctx context.Context, req *rpc.IdentityRequ
 }
 
 func (core *RicochetCore) MonitorContacts(req *rpc.MonitorContactsRequest, stream rpc.RicochetCore_MonitorContactsServer) error {
+	monitor := core.Identity().ContactList().EventMonitor().Subscribe(20)
+	defer core.Identity().ContactList().EventMonitor().Unsubscribe(monitor)
+
 	// Populate
 	contacts := core.Identity().ContactList().Contacts()
 	for _, contact := range contacts {
@@ -123,7 +126,19 @@ func (core *RicochetCore) MonitorContacts(req *rpc.MonitorContactsRequest, strea
 		}
 	}
 
-	return NotImplementedError
+	for {
+		event, ok := (<-monitor).(rpc.ContactEvent)
+		if !ok {
+			break
+		}
+
+		log.Printf("Contact event: %v", event)
+		if err := stream.Send(&event); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (core *RicochetCore) AddContactRequest(ctx context.Context, req *rpc.ContactRequest) (*rpc.Contact, error) {
@@ -135,7 +150,17 @@ func (core *RicochetCore) UpdateContact(ctx context.Context, req *rpc.Contact) (
 }
 
 func (core *RicochetCore) DeleteContact(ctx context.Context, req *rpc.DeleteContactRequest) (*rpc.DeleteContactReply, error) {
-	return nil, NotImplementedError
+	contactList := core.Identity().ContactList()
+	contact := contactList.ContactByAddress(req.Address)
+	if contact == nil || (req.Id != 0 && contact.Id() != int(req.Id)) {
+		return nil, errors.New("Contact not found")
+	}
+
+	if err := contactList.RemoveContact(contact); err != nil {
+		return nil, err
+	}
+
+	return &rpc.DeleteContactReply{}, nil
 }
 
 func (core *RicochetCore) AcceptInboundRequest(ctx context.Context, req *rpc.ContactRequest) (*rpc.Contact, error) {

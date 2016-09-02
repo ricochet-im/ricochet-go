@@ -120,7 +120,7 @@ func (n *Network) GetStatus() ricochet.NetworkStatus {
 // May return nil on failure, and the returned connection can be closed
 // or otherwise fail at any time.
 func (n *Network) getConnection() *bulb.Conn {
-	// Optimistically try to get a connection before subscribin to events
+	// Optimistically try to get a connection before subscribing to events
 	n.controlMutex.Lock()
 	conn := n.conn
 	n.controlMutex.Unlock()
