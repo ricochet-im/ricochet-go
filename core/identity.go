@@ -9,7 +9,7 @@ import (
 )
 
 type Identity struct {
-	core Ricochet
+	core *Ricochet
 
 	address    string
 	privateKey *rsa.PrivateKey
@@ -17,7 +17,7 @@ type Identity struct {
 	contactList *ContactList
 }
 
-func CreateIdentity(core Ricochet) (*Identity, error) {
+func CreateIdentity(core *Ricochet) (*Identity, error) {
 	me := &Identity{
 		core: core,
 	}
@@ -39,7 +39,7 @@ func CreateIdentity(core Ricochet) (*Identity, error) {
 }
 
 func (me *Identity) loadIdentity() error {
-	config := me.core.Config().OpenRead()
+	config := me.core.Config.OpenRead()
 	defer config.Close()
 
 	if config.Identity.ServiceKey != "" {

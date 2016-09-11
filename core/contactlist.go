@@ -18,12 +18,12 @@ type ContactList struct {
 	inboundRequests  map[int]*InboundContactRequest
 }
 
-func LoadContactList(core Ricochet) (*ContactList, error) {
+func LoadContactList(core *Ricochet) (*ContactList, error) {
 	list := &ContactList{
 		events: utils.CreatePublisher(),
 	}
 
-	config := core.Config().OpenRead()
+	config := core.Config.OpenRead()
 	defer config.Close()
 
 	list.contacts = make(map[int]*Contact, len(config.Contacts))
