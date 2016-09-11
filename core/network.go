@@ -154,7 +154,7 @@ func (n *Network) getConnection() *bulb.Conn {
 // This function will block until a control connection is available and
 // the service is added or the command has failed. If the control connection
 // is lost and reconnected, the service will be re-added automatically.
-// BUG: Errors that occur after reconnecting cannot be detected.
+// BUG(special): Errors that occur after reconnecting cannot be detected.
 func (n *Network) AddOnionPorts(ports []bulb.OnionPortSpec, key crypto.PrivateKey) (*OnionService, error) {
 	if key == nil {
 		// Ask for a new key, force RSA1024
