@@ -76,10 +76,26 @@ func (handler *protocolHandler) OnAuthenticationChallenge(oc *protocol.OpenConne
 
 func (handler *protocolHandler) OnAuthenticationProof(oc *protocol.OpenConnection, channelID int32, publicKey []byte, signature []byte, isKnownContact bool) {
 	result := oc.ValidateProof(channelID, publicKey, signature)
-	log.Printf("protocol: OnAuthenticationProof, result: %v", result)
+
+	var contact *Contact
+	if result {
+		if len(oc.OtherHostname) != 16 {
+			log.Printf("protocol: Invalid format for hostname '%s' in authentication proof", oc.OtherHostname)
+			result = false
+		} else {
+			contact = handler.p.core.Identity.ContactList().ContactByAddress("ricochet:" + oc.OtherHostname)
+		}
+	}
+	isKnownContact = (contact != nil)
+
 	oc.SendAuthenticationResult(channelID, result, isKnownContact)
 	oc.IsAuthed = result
 	oc.CloseChannel(channelID)
+
+	log.Printf("protocol: OnAuthenticationProof, result: %v, contact: %v", result, contact)
+	if result && contact != nil {
+		contact.SetConnection(oc)
+	}
 }
 
 func (handler *protocolHandler) OnAuthenticationResult(oc *protocol.OpenConnection, channelID int32, result bool, isKnownContact bool) {
@@ -89,7 +105,8 @@ func (handler *protocolHandler) OnAuthenticationResult(oc *protocol.OpenConnecti
 
 // Contact Management
 func (handler *protocolHandler) IsKnownContact(hostname string) bool {
-	return true
+	contact := handler.p.core.Identity.ContactList().ContactByAddress("ricochet:" + hostname)
+	return contact != nil
 }
 
 func (handler *protocolHandler) OnContactRequest(oc *protocol.OpenConnection, channelID int32, nick string, message string) {

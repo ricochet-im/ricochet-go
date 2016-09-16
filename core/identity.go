@@ -100,6 +100,10 @@ func (me *Identity) setPrivateKey(key *rsa.PrivateKey) error {
 
 // BUG(special): No error handling for failures under publishService
 func (me *Identity) publishService(key *rsa.PrivateKey) {
+	// This call will block until a control connection is available and the
+	// ADD_ONION command has returned. After creating the listener, it will
+	// be automatically re-published if the control connection is lost and
+	// later reconnected.
 	service, listener, err := me.core.Network.NewOnionListener(9878, key)
 	if err != nil {
 		log.Printf("Identity listener failed: %v", err)
@@ -108,6 +112,12 @@ func (me *Identity) publishService(key *rsa.PrivateKey) {
 	}
 
 	if key == nil {
+		if service.PrivateKey == nil {
+			log.Printf("Setting private key failed: no key returned")
+			// XXX handle
+			return
+		}
+
 		err := me.setPrivateKey(service.PrivateKey.(*rsa.PrivateKey))
 		if err != nil {
 			log.Printf("Setting private key failed: %v", err)
