@@ -6,7 +6,6 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"gopkg.in/readline.v1"
-	"io"
 	"log"
 	"strings"
 )
@@ -14,35 +13,6 @@ import (
 const (
 	defaultAddress = "127.0.0.1:58281"
 )
-
-type Client struct {
-	Backend rpc.RicochetCoreClient
-	Input   *readline.Instance
-}
-
-func (c *Client) Initialize() error {
-	stream, err := c.Backend.MonitorNetwork(context.Background(), &rpc.MonitorNetworkRequest{})
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		for {
-			resp, err := stream.Recv()
-			if err == io.EOF {
-				log.Printf("stream eof")
-				break
-			}
-			if err != nil {
-				log.Printf("stream error: %v", err)
-				break
-			}
-			log.Printf("stream says: %v", resp)
-		}
-	}()
-
-	return nil
-}
 
 func main() {
 	conn, err := grpc.Dial(defaultAddress, grpc.WithInsecure())
@@ -80,20 +50,10 @@ func main() {
 		switch words[0] {
 		case "clear":
 			readline.ClearScreen(readline.Stdout)
-		case "status":
-			r, err := c.Backend.GetServerStatus(context.Background(), &rpc.ServerStatusRequest{
-				RpcVersion: 1,
-			})
-			if err != nil {
-				log.Fatalf("could not get status: %v", err)
-			}
-			log.Printf("get status result: %v", r)
 
-			identity, err := c.Backend.GetIdentity(context.Background(), &rpc.IdentityRequest{})
-			if err != nil {
-				log.Fatalf("could not get identity: %v", err)
-			}
-			log.Printf("identity: %v", identity)
+		case "status":
+			log.Printf("server: %v", c.ServerStatus)
+			log.Printf("identity: %v", c.Identity)
 
 		case "connect":
 			status, err := c.Backend.StartNetwork(context.Background(), &rpc.StartNetworkRequest{})
@@ -102,6 +62,7 @@ func main() {
 			} else {
 				log.Printf("network started: %v", status)
 			}
+
 		case "disconnect":
 			status, err := c.Backend.StopNetwork(context.Background(), &rpc.StopNetworkRequest{})
 			if err != nil {
@@ -109,27 +70,17 @@ func main() {
 			} else {
 				log.Printf("network stopped: %v", status)
 			}
+
 		case "contacts":
-			stream, err := c.Backend.MonitorContacts(context.Background(), &rpc.MonitorContactsRequest{})
-			if err != nil {
-				log.Printf("contacts error: %v", err)
-			} else {
-				for {
-					event, err := stream.Recv()
-					if err == io.EOF {
-						break
-					}
-					if err != nil {
-						log.Printf("contacts error: %v", err)
-						break
-					}
-					log.Printf("contact event: %v", event)
-				}
+			for _, contact := range c.Contacts {
+				log.Printf("  %s (%s)", contact.Nickname, contact.Status.String())
 			}
+
 		case "help":
 			fallthrough
+
 		default:
-			fmt.Println("Commands: clear, status, connect, disconnect, help")
+			fmt.Println("Commands: clear, status, connect, disconnect, contacts, help")
 		}
 	}
 }
