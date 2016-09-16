@@ -1,6 +1,9 @@
 syntax = "proto3";
 package ricochet;
 
+// XXX Using integer contact IDs seems dangerous, and it's especially a
+// problem that 0 is a valid contact ID. Switch to UUID? Or use address?
+
 message Contact {
     int32 id = 1;
     string address = 2;
@@ -10,10 +13,11 @@ message Contact {
     ContactRequest request = 6;
 
     enum Status {
-        OFFLINE = 0;
-        ONLINE = 1;
-        REQUEST = 2;
-        REJECTED = 3;
+        UNKNOWN = 0;
+        OFFLINE = 1;
+        ONLINE = 2;
+        REQUEST = 3;
+        REJECTED = 4;
     }
     Status status = 10;
 }

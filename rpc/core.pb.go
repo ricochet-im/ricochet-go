@@ -71,6 +71,11 @@ type RicochetCoreClient interface {
 	StopNetwork(ctx context.Context, in *StopNetworkRequest, opts ...grpc.CallOption) (*NetworkStatus, error)
 	// XXX Service status
 	GetIdentity(ctx context.Context, in *IdentityRequest, opts ...grpc.CallOption) (*Identity, error)
+	// Query contacts and monitor for contact changes. The full contact list
+	// is sent in POPULATE events, terminated by a POPULATE event with no
+	// subject. Any new, removed, or modified contacts, including changes in
+	// the state of contacts, are sent as ADD, UPDATE, or DELETE events until
+	// the stream is closed.
 	MonitorContacts(ctx context.Context, in *MonitorContactsRequest, opts ...grpc.CallOption) (RicochetCore_MonitorContactsClient, error)
 	AddContactRequest(ctx context.Context, in *ContactRequest, opts ...grpc.CallOption) (*Contact, error)
 	UpdateContact(ctx context.Context, in *Contact, opts ...grpc.CallOption) (*Contact, error)
@@ -285,6 +290,11 @@ type RicochetCoreServer interface {
 	StopNetwork(context.Context, *StopNetworkRequest) (*NetworkStatus, error)
 	// XXX Service status
 	GetIdentity(context.Context, *IdentityRequest) (*Identity, error)
+	// Query contacts and monitor for contact changes. The full contact list
+	// is sent in POPULATE events, terminated by a POPULATE event with no
+	// subject. Any new, removed, or modified contacts, including changes in
+	// the state of contacts, are sent as ADD, UPDATE, or DELETE events until
+	// the stream is closed.
 	MonitorContacts(*MonitorContactsRequest, RicochetCore_MonitorContactsServer) error
 	AddContactRequest(context.Context, *ContactRequest) (*Contact, error)
 	UpdateContact(context.Context, *Contact) (*Contact, error)
