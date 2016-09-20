@@ -191,3 +191,30 @@ func (c *Contact) shouldReplaceConnection(conn *protocol.OpenConnection) bool {
 	}
 	return false
 }
+
+func (c *Contact) OnConnectionClosed(conn *protocol.OpenConnection) {
+	c.mutex.Lock()
+
+	if c.connection != conn {
+		c.mutex.Unlock()
+		return
+	}
+
+	c.connection = nil
+	c.status = ricochet.Contact_OFFLINE
+
+	config := c.core.Config.OpenWrite()
+	c.data.LastConnected = time.Now().Format(time.RFC3339)
+	config.Contacts[strconv.Itoa(c.id)] = c.data
+	config.Save()
+
+	c.mutex.Unlock()
+
+	event := ricochet.ContactEvent{
+		Type: ricochet.ContactEvent_UPDATE,
+		Subject: &ricochet.ContactEvent_Contact{
+			Contact: c.Data(),
+		},
+	}
+	c.events.Publish(event)
+}

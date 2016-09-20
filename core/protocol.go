@@ -61,6 +61,16 @@ func (handler *protocolHandler) OnConnect(oc *protocol.OpenConnection) {
 	}
 }
 
+func (handler *protocolHandler) OnDisconnect(oc *protocol.OpenConnection) {
+	log.Printf("protocol: OnDisconnect: %v", oc)
+	if oc.OtherHostname != "" {
+		contact := handler.p.core.Identity.ContactList().ContactByAddress("ricochet:" + oc.OtherHostname)
+		if contact != nil {
+			contact.OnConnectionClosed(oc)
+		}
+	}
+}
+
 // Authentication Management
 func (handler *protocolHandler) OnAuthenticationRequest(oc *protocol.OpenConnection, channelID int32, clientCookie [16]byte) {
 	log.Printf("protocol: OnAuthenticationRequest")
