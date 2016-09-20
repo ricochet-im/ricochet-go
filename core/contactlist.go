@@ -36,7 +36,7 @@ func LoadContactList(core *Ricochet) (*ContactList, error) {
 			return nil, fmt.Errorf("Duplicate contact id '%d'", id)
 		}
 
-		contact, err := ContactFromConfig(id, data)
+		contact, err := ContactFromConfig(core, id, data, list.events)
 		if err != nil {
 			return nil, err
 		}

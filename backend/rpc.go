@@ -6,7 +6,6 @@ import (
 	rpc "github.com/special/notricochet/rpc"
 	"golang.org/x/net/context"
 	"log"
-	"time"
 )
 
 var NotImplementedError error = errors.New("Not implemented")
@@ -85,17 +84,10 @@ func (s *RpcServer) MonitorContacts(req *rpc.MonitorContactsRequest, stream rpc.
 	// Populate
 	contacts := s.core.Identity.ContactList().Contacts()
 	for _, contact := range contacts {
-		data := &rpc.Contact{
-			Id:            int32(contact.Id()),
-			Address:       contact.Address(),
-			Nickname:      contact.Nickname(),
-			WhenCreated:   contact.WhenCreated().Format(time.RFC3339),
-			LastConnected: contact.LastConnected().Format(time.RFC3339),
-		}
 		event := &rpc.ContactEvent{
 			Type: rpc.ContactEvent_POPULATE,
 			Subject: &rpc.ContactEvent_Contact{
-				Contact: data,
+				Contact: contact.Data(),
 			},
 		}
 		if err := stream.Send(event); err != nil {
