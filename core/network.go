@@ -7,6 +7,7 @@ import (
 	"github.com/special/notricochet/rpc"
 	"github.com/yawning/bulb"
 	bulbutils "github.com/yawning/bulb/utils"
+	"golang.org/x/net/proxy"
 	"log"
 	"net"
 	"strings"
@@ -39,7 +40,8 @@ type Network struct {
 	// et al for each change.
 	status ricochet.NetworkStatus
 
-	onions []*OnionService
+	socksAddress socksAddress
+	onions       []*OnionService
 }
 
 type OnionService struct {
@@ -114,6 +116,121 @@ func (n *Network) GetStatus() ricochet.NetworkStatus {
 	status := n.status
 	n.controlMutex.Unlock()
 	return status
+}
+
+type socksAddress struct {
+	Network string
+	Address string
+	IP      net.IP
+}
+
+func (sa socksAddress) IsValid() bool {
+	return sa.Network != "" && sa.Address != ""
+}
+
+func (sa socksAddress) PreferredTo(other socksAddress, preferredIP net.IP) bool {
+	// Prefer, in order:
+	//   - any over null
+	//   - unix sockets over others
+	//   - same ip as control address
+	//   - loopback over other ips
+	//   - first seen
+
+	if sa.Network == "" || other.Network == "" {
+		return other.Network == ""
+	}
+
+	if sa.Network == "unix" || other.Network == "unix" {
+		return other.Network != "unix"
+	}
+
+	if !preferredIP.IsUnspecified() &&
+		(net.IP.Equal(sa.IP, preferredIP) || net.IP.Equal(other.IP, preferredIP)) {
+		return !net.IP.Equal(other.IP, preferredIP)
+	}
+
+	if sa.IP.IsLoopback() || other.IP.IsLoopback() {
+		return !other.IP.IsLoopback()
+	}
+
+	return false
+}
+
+// Choose the best SOCKS address out of the list in 'addresses'
+// If controlAddress is non-empty, prefer a SOCKS port on the same host
+func chooseSocksAddress(addresses []string, controlAddress string) (socksAddress, error) {
+	var selected socksAddress
+	var preferredIP net.IP
+	torOnLocalhost := true
+
+	if len(addresses) == 0 {
+		return selected, errors.New("No SOCKS port configured")
+	}
+
+	// controlAddress is in the form of tcp:// or unix://
+	if strings.HasPrefix(controlAddress, "tcp:") {
+		_, addrport, _ := bulbutils.ParseControlPortString(controlAddress)
+		addr, _, _ := net.SplitHostPort(addrport)
+		preferredIP = net.ParseIP(addr)
+		torOnLocalhost = preferredIP.IsLoopback()
+	}
+
+	// List of SOCKS ports, relative to the tor daemon
+	// Can be in the form "127.0.0.1:9050", "unix:...", or "[::1]:9050"
+	for _, addr := range addresses {
+		var socks socksAddress
+
+		// Parse into 'socks' and filter out localhost if necessary
+		if strings.HasPrefix(addr, "unix:") {
+			// Ignore unix ports for remote tor
+			if !torOnLocalhost {
+				log.Printf("Ignoring loopback SOCKS port %s", addr)
+				continue
+			}
+			socks = socksAddress{
+				Network: "unix",
+				Address: addr[5:],
+			}
+		} else {
+			ipStr, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				log.Printf("Ignoring malformed SOCKS address '%s': %s", addr, err)
+				continue
+			}
+			socks = socksAddress{
+				Network: "tcp",
+				Address: addr,
+				IP:      net.ParseIP(ipStr),
+			}
+			if !torOnLocalhost && socks.IP.IsLoopback() {
+				log.Printf("Ignoring loopback SOCKS port %s", addr)
+				continue
+			}
+		}
+
+		// Compare to current selection
+		if socks.PreferredTo(selected, preferredIP) {
+			selected = socks
+		}
+	}
+
+	if !selected.IsValid() {
+		return selected, errors.New("No valid SOCKS configuration")
+	}
+
+	return selected, nil
+}
+
+func (n *Network) GetProxyDialer() (proxy.Dialer, error) {
+	n.controlMutex.Lock()
+	socks := n.socksAddress
+	n.controlMutex.Unlock()
+
+	if !socks.IsValid() {
+		return nil, errors.New("No valid SOCKS configuration")
+	}
+
+	return proxy.SOCKS5(socks.Network, socks.Address, nil, nil)
 }
 
 // Return the control connection, blocking until connected if necessary
@@ -322,23 +439,31 @@ func (n *Network) connectControl() error {
 		return err
 	}
 
+	// Choose default SOCKS port
+	socks, err := chooseSocksAddress(connStatus.SocksAddress, n.controlAddress)
+	if socks.IsValid() {
+		log.Printf("Discovered SOCKS port %s %s", socks.Network, socks.Address)
+	} else {
+		log.Printf("No SOCKS port: %v", err)
+	}
+
+	n.controlMutex.Lock()
+
 	// Copy list of onions to republish. This is done before the status
 	// change to avoid racing with blocked calls to AddOnionPorts, which
 	// will add to this list once the connection is available, but the
 	// publication is done afterwards.
-	n.controlMutex.Lock()
 	onions := make([]*OnionService, len(n.onions))
 	copy(onions, n.onions)
-	n.controlMutex.Unlock()
 
 	// Update network status and set connection
-	n.controlMutex.Lock()
 	n.conn = conn
 	n.status.Control = &ricochet.TorControlStatus{
 		Status:     ricochet.TorControlStatus_CONNECTED,
 		TorVersion: pinfo.TorVersion,
 	}
 	n.status.Connection = &connStatus
+	n.socksAddress = socks
 	status := n.status
 	n.controlMutex.Unlock()
 	n.events.Publish(status)
