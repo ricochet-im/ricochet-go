@@ -7,6 +7,7 @@ import (
 	"github.com/special/notricochet/rpc"
 	"github.com/yawning/bulb"
 	bulbutils "github.com/yawning/bulb/utils"
+	"golang.org/x/net/context"
 	"golang.org/x/net/proxy"
 	"log"
 	"net"
@@ -221,7 +222,7 @@ func chooseSocksAddress(addresses []string, controlAddress string) (socksAddress
 	return selected, nil
 }
 
-func (n *Network) GetProxyDialer() (proxy.Dialer, error) {
+func (n *Network) GetProxyDialer(forward proxy.Dialer) (proxy.Dialer, error) {
 	n.controlMutex.Lock()
 	socks := n.socksAddress
 	n.controlMutex.Unlock()
@@ -230,7 +231,42 @@ func (n *Network) GetProxyDialer() (proxy.Dialer, error) {
 		return nil, errors.New("No valid SOCKS configuration")
 	}
 
-	return proxy.SOCKS5(socks.Network, socks.Address, nil, nil)
+	return proxy.SOCKS5(socks.Network, socks.Address, nil, forward)
+}
+
+func (n *Network) WaitForProxyDialer(forward proxy.Dialer, c context.Context) (proxy.Dialer, error) {
+	var monitor <-chan interface{}
+	for {
+		// Check if there's a proxy address available
+		n.controlMutex.Lock()
+		socks := n.socksAddress
+		n.controlMutex.Unlock()
+
+		if socks.IsValid() {
+			return proxy.SOCKS5(socks.Network, socks.Address, nil, forward)
+		}
+
+		if monitor == nil {
+			// Subscribe to connectivity change events; this is done after the first
+			// check to avoid overhead for the common case
+			monitor = n.EventMonitor().Subscribe(20)
+			defer n.EventMonitor().Unsubscribe(monitor)
+			// Check again before blocking on the monitor now that we're subscribed,
+			// in case the state changed since unlocking the mutex.
+			continue
+		}
+
+		select {
+		case _, ok := <-monitor:
+			if !ok {
+				return nil, errors.New("Event monitor closed")
+			}
+		case <-c.Done():
+			return nil, c.Err()
+		}
+	}
+
+	return nil, errors.New("No valid SOCKS configuration")
 }
 
 // Return the control connection, blocking until connected if necessary
