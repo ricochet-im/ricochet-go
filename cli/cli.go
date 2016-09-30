@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc"
 	"gopkg.in/readline.v1"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -17,13 +18,15 @@ const (
 func main() {
 	conn, err := grpc.Dial(defaultAddress, grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("connection failed: %v", err)
+		fmt.Printf("connection failed: %v\n", err)
+		os.Exit(1)
 	}
 	defer conn.Close()
 
 	input, err := readline.NewEx(&readline.Config{})
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 	defer input.Close()
 	log.SetOutput(input.Stdout())
@@ -34,7 +37,8 @@ func main() {
 	}
 
 	if err := c.Initialize(); err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
 	input.SetPrompt("> ")
@@ -51,36 +55,52 @@ func main() {
 		case "clear":
 			readline.ClearScreen(readline.Stdout)
 
+		case "quit":
+			os.Exit(0)
+
 		case "status":
-			log.Printf("server: %v", c.ServerStatus)
-			log.Printf("identity: %v", c.Identity)
+			fmt.Printf("server: %v\n", c.ServerStatus)
+			fmt.Printf("identity: %v\n", c.Identity)
 
 		case "connect":
 			status, err := c.Backend.StartNetwork(context.Background(), &rpc.StartNetworkRequest{})
 			if err != nil {
-				log.Printf("start network error: %v", err)
+				fmt.Printf("start network error: %v\n", err)
 			} else {
-				log.Printf("network started: %v", status)
+				fmt.Printf("network started: %v\n", status)
 			}
 
 		case "disconnect":
 			status, err := c.Backend.StopNetwork(context.Background(), &rpc.StopNetworkRequest{})
 			if err != nil {
-				log.Printf("stop network error: %v", err)
+				fmt.Printf("stop network error: %v\n", err)
 			} else {
-				log.Printf("network stopped: %v", status)
+				fmt.Printf("network stopped: %v\n", status)
 			}
 
 		case "contacts":
+			byStatus := make(map[rpc.Contact_Status][]*rpc.Contact)
 			for _, contact := range c.Contacts {
-				log.Printf("  %s (%s)", contact.Nickname, contact.Status.String())
+				byStatus[contact.Status] = append(byStatus[contact.Status], contact)
+			}
+
+			order := []rpc.Contact_Status{rpc.Contact_ONLINE, rpc.Contact_UNKNOWN, rpc.Contact_OFFLINE, rpc.Contact_REQUEST, rpc.Contact_REJECTED}
+			for _, status := range order {
+				contacts := byStatus[status]
+				if len(contacts) == 0 {
+					continue
+				}
+				fmt.Printf(". %s\n", strings.ToLower(status.String()))
+				for _, contact := range contacts {
+					fmt.Printf("... %s\n", contact.Nickname)
+				}
 			}
 
 		case "help":
 			fallthrough
 
 		default:
-			fmt.Println("Commands: clear, status, connect, disconnect, contacts, help")
+			fmt.Println("Commands: clear, quit, status, connect, disconnect, contacts, help")
 		}
 	}
 }
