@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+// XXX Network disconnect should kill open connections ... somehow
+
 type Network struct {
 	// Connection settings; can only change while stopped
 	controlAddress  string

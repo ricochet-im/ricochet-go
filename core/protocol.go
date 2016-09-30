@@ -36,8 +36,8 @@ func (p *Protocol) ServeListener(listener net.Listener) {
 // Strangely, ServeListener starts a background routine that watches a channel
 // on p.service for new connections and dispatches their events to the handler
 // for the listener. API needs a little work here.
-func (p *Protocol) Connect(address string) (*protocol.OpenConnection, error) {
-	oc, err := p.service.Connect(address)
+func (p *Protocol) ConnectOpen(conn net.Conn, host string) (*protocol.OpenConnection, error) {
+	oc, err := p.service.ConnectOpen(conn, host)
 	if err != nil {
 		return nil, err
 	}
@@ -104,13 +104,36 @@ func (handler *protocolHandler) OnAuthenticationProof(oc *protocol.OpenConnectio
 
 	log.Printf("protocol: OnAuthenticationProof, result: %v, contact: %v", result, contact)
 	if result && contact != nil {
-		contact.SetConnection(oc)
+		contact.OnConnectionAuthenticated(oc)
 	}
 }
 
 func (handler *protocolHandler) OnAuthenticationResult(oc *protocol.OpenConnection, channelID int32, result bool, isKnownContact bool) {
-	log.Printf("protocol: OnAuthenticationResult, result: %v, known: %v", result, isKnownContact)
 	oc.IsAuthed = result
+	oc.CloseChannel(channelID)
+
+	if !result {
+		log.Printf("protocol: Outbound connection authentication to %s failed", oc.OtherHostname)
+		oc.Close()
+		return
+	}
+
+	// XXX Contact request, removed cases
+	if !isKnownContact {
+		log.Printf("protocol: Outbound connection authentication to %s succeeded, but we are not a known contact", oc.OtherHostname)
+		oc.Close()
+		return
+	}
+
+	contact := handler.p.core.Identity.ContactList().ContactByAddress("ricochet:" + oc.OtherHostname)
+	if contact == nil {
+		log.Printf("protocol: Outbound connection authenticated to %s succeeded, but no matching contact found", oc.OtherHostname)
+		oc.Close()
+		return
+	}
+
+	log.Printf("protocol: Outbound connection to %s authenticated", oc.OtherHostname)
+	contact.OnConnectionAuthenticated(oc)
 }
 
 // Contact Management
