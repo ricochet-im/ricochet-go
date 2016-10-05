@@ -14,19 +14,24 @@ message ConversationEvent {
     Message msg = 2;
 }
 
+message MonitorConversationsRequest {
+}
+
 message Entity {
-    // null is self
+    // contactId and address MAY be unspecified for self
     int32 contactId = 1;
     string address = 2;
+    bool isSelf = 3;
 }
 
 message Message {
     Entity sender = 1;
     Entity recipient = 2;
     int64 timestamp = 3;
-    // Identifiers are unique _only_ to a sender/recipient pair in a session
-    // XXX This is a silly thing to perpetuate; should we UUID?
-    uint32 identifier = 4;
+    // Identifiers are unique for the tuple of (sender, recipient, direction)
+    // within a single session, and should be randomized between sessions to
+    // reduce the chance of collision.
+    uint64 identifier = 4;
 
     enum Status {
         NULL = 0;

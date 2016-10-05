@@ -42,7 +42,9 @@ service RicochetCore {
     rpc AcceptInboundRequest (ContactRequest) returns (Contact);
     rpc RejectInboundRequest (ContactRequest) returns (RejectInboundRequestReply);
 
-    rpc StreamConversations (stream ConversationEvent) returns (stream ConversationEvent);
+    // Open a stream to monitor messages in conversations with contacts.
+    rpc MonitorConversations (MonitorConversationsRequest) returns (stream ConversationEvent);
+    rpc SendMessage (Message) returns (Message);
 }
 
 message ServerStatusRequest {

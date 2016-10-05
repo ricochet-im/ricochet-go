@@ -149,6 +149,26 @@ func (s *RpcServer) RejectInboundRequest(ctx context.Context, req *rpc.ContactRe
 	return nil, NotImplementedError
 }
 
-func (s *RpcServer) StreamConversations(stream rpc.RicochetCore_StreamConversationsServer) error {
-	return NotImplementedError
+func (s *RpcServer) MonitorConversations(req *rpc.MonitorConversationsRequest, stream rpc.RicochetCore_MonitorConversationsServer) error {
+	monitor := ricochet.ConversationEventMonitor().Subscribe(100)
+	defer ricochet.ConversationEventMonitor().Unsubscribe(monitor)
+
+	// XXX should populate
+
+	for {
+		event, ok := (<-monitor).(rpc.ConversationEvent)
+		if !ok {
+			break
+		}
+
+		if err := stream.Send(&event); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *RpcServer) SendMessage(ctx context.Context, req *rpc.Message) (*rpc.Message, error) {
+	return nil, NotImplementedError
 }

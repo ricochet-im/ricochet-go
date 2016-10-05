@@ -29,6 +29,8 @@ type Contact struct {
 	connection        *protocol.OpenConnection
 	connChannel       chan *protocol.OpenConnection
 	connClosedChannel chan struct{}
+
+	conversation *Conversation
 }
 
 func ContactFromConfig(core *Ricochet, id int, data ConfigContact, events *utils.Publisher) (*Contact, error) {
@@ -108,6 +110,19 @@ func (c *Contact) Data() *ricochet.Contact {
 		Status:        c.status,
 	}
 	return data
+}
+
+func (c *Contact) Conversation() *Conversation {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.conversation == nil {
+		entity := &ricochet.Entity{
+			ContactId: int32(c.id),
+			Address:   "ricochet:" + c.data.Hostname[0:16],
+		}
+		c.conversation = NewConversation(c.core, c, entity)
+	}
+	return c.conversation
 }
 
 // Goroutine to handle the protocol connection for a contact.

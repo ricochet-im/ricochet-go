@@ -25,6 +25,7 @@ It has these top-level messages:
 	DeleteContactReply
 	RejectInboundRequestReply
 	ConversationEvent
+	MonitorConversationsRequest
 	Entity
 	Message
 	ServerStatusRequest

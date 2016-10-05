@@ -5,6 +5,7 @@ import (
 	protocol "github.com/s-rah/go-ricochet"
 	"log"
 	"net"
+	"time"
 )
 
 type Protocol struct {
@@ -150,22 +151,48 @@ func (handler *protocolHandler) OnContactRequestAck(oc *protocol.OpenConnection,
 
 // Managing Channels
 func (handler *protocolHandler) OnOpenChannelRequest(oc *protocol.OpenConnection, channelID int32, channelType string) {
+	log.Printf("open channel request: %v %v", channelID, channelType)
 	oc.AckOpenChannel(channelID, channelType)
 }
 
 func (handler *protocolHandler) OnOpenChannelRequestSuccess(oc *protocol.OpenConnection, channelID int32) {
+	log.Printf("open channel request success: %v %v", channelID)
 }
 func (handler *protocolHandler) OnChannelClosed(oc *protocol.OpenConnection, channelID int32) {
+	log.Printf("channel closed: %v", channelID)
 }
 
 // Chat Messages
+// XXX messageID should be (at least) uint32
 func (handler *protocolHandler) OnChatMessage(oc *protocol.OpenConnection, channelID int32, messageID int32, message string) {
+	// XXX no time delta?
+	// XXX sanity checks, message contents, etc
+	log.Printf("chat message: %d %d %s", channelID, messageID, message)
+
+	// XXX ugllly
+	contact := handler.p.core.Identity.ContactList().ContactByAddress("ricochet:" + oc.OtherHostname)
+	if contact != nil {
+		conversation := contact.Conversation()
+		conversation.Receive(uint64(messageID), time.Now().Unix(), message)
+	}
+
+	oc.AckChatMessage(channelID, messageID)
 }
 func (handler *protocolHandler) OnChatMessageAck(oc *protocol.OpenConnection, channelID int32, messageID int32) {
+	// XXX no success
+	log.Printf("chat ack: %d %d", channelID, messageID)
+
+	// XXX Also ugly
+	contact := handler.p.core.Identity.ContactList().ContactByAddress("ricochet:" + oc.OtherHostname)
+	if contact != nil {
+		conversation := contact.Conversation()
+		conversation.UpdateSentStatus(uint64(messageID), true)
+	}
 }
 
 // Handle Errors
 func (handler *protocolHandler) OnFailedChannelOpen(oc *protocol.OpenConnection, channelID int32, errorType string) {
+	log.Printf("failed channel open: %d %s", channelID, errorType)
 	oc.UnsetChannel(channelID)
 }
 func (handler *protocolHandler) OnGenericError(oc *protocol.OpenConnection, channelID int32) {
