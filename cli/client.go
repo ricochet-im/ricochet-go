@@ -44,6 +44,7 @@ func (c *Client) Initialize() error {
 	// Spawn routines to query and monitor state changes
 	go c.monitorNetwork()
 	go c.monitorContacts()
+	go c.monitorConversations()
 
 	// XXX block until populated/initialized?
 	return nil
@@ -175,5 +176,27 @@ func (c *Client) monitorContacts() {
 		default:
 			log.Printf("Ignoring unknown contact event: %v", event)
 		}
+	}
+}
+
+func (c *Client) monitorConversations() {
+	stream, err := c.Backend.MonitorConversations(context.Background(), &ricochet.MonitorConversationsRequest{})
+	if err != nil {
+		log.Printf("Initializing conversations monitor failed: %v", err)
+		// XXX handle
+		return
+	}
+
+	log.Printf("Monitoring conversations")
+
+	for {
+		event, err := stream.Recv()
+		if err != nil {
+			log.Printf("Conversations monitor error: %v", err)
+			// XXX handle
+			break
+		}
+
+		log.Printf("Conversation event: %v", event)
 	}
 }
