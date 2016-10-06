@@ -88,7 +88,7 @@ func (c *Conversation) UpdateSentStatus(id uint64, success bool) {
 	c.mutex.Unlock()
 }
 
-func (c *Conversation) Send(text string) {
+func (c *Conversation) Send(text string) (*ricochet.Message, error) {
 	// XXX protocol
 	// XXX check that text is ok, get identifier, etc
 	// XXX decide whether sending or queued based on state
@@ -96,10 +96,29 @@ func (c *Conversation) Send(text string) {
 		Sender:     c.localEntity,
 		Recipient:  c.remoteEntity,
 		Timestamp:  time.Now().Unix(),
-		Identifier: 0,                        // XXX
-		Status:     ricochet.Message_SENDING, // XXX
+		Identifier: 0, // XXX
+		Status:     ricochet.Message_QUEUED,
 		Text:       text,
 	}
+
+	// XXX witness thread disaster
+	conn := c.Contact.Connection()
+	if conn != nil {
+		// XXX hardcoded channel IDs, also channel IDs shouldn't be exposed
+		channelId := int32(7)
+		if !conn.Client {
+			channelId++
+		}
+		// XXX no error handling
+		if conn.GetChannelType(channelId) != "im.ricochet.chat" {
+			conn.OpenChatChannel(channelId)
+		}
+
+		// XXX no message IDs, no acks
+		conn.SendMessage(channelId, text)
+		message.Status = ricochet.Message_SENDING
+	}
+
 	c.mutex.Lock()
 	c.messages = append(c.messages, message)
 	log.Printf("Conversation sent message: %v", message)
@@ -110,4 +129,6 @@ func (c *Conversation) Send(text string) {
 		Msg:  message,
 	}
 	conversationStream.Publish(event)
+
+	return message, nil
 }

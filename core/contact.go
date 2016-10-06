@@ -125,6 +125,13 @@ func (c *Contact) Conversation() *Conversation {
 	return c.conversation
 }
 
+// XXX Thread safety disaster
+func (c *Contact) Connection() *protocol.OpenConnection {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.connection
+}
+
 // Goroutine to handle the protocol connection for a contact.
 // Responsible for making outbound connections and taking over authenticated
 // inbound connections, running protocol handlers on the active connection, and

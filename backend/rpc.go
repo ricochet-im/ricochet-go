@@ -170,5 +170,25 @@ func (s *RpcServer) MonitorConversations(req *rpc.MonitorConversationsRequest, s
 }
 
 func (s *RpcServer) SendMessage(ctx context.Context, req *rpc.Message) (*rpc.Message, error) {
-	return nil, NotImplementedError
+	if req.Sender == nil || !req.Sender.IsSelf {
+		return nil, errors.New("Invalid message sender")
+	} else if req.Recipient == nil || req.Recipient.IsSelf {
+		return nil, errors.New("Invalid message recipient")
+	}
+
+	contact := s.core.Identity.ContactList().ContactByAddress(req.Recipient.Address)
+	if contact == nil || (req.Recipient.ContactId != 0 && int32(contact.Id()) != req.Recipient.ContactId) {
+		return nil, errors.New("Unknown recipient")
+	}
+
+	// XXX timestamp
+	// XXX validate text
+	// XXX identifier
+
+	message, err := contact.Conversation().Send(req.Text)
+	if err != nil {
+		return nil, err
+	}
+
+	return message, nil
 }
