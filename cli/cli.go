@@ -8,6 +8,7 @@ import (
 	"gopkg.in/readline.v1"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -51,6 +52,42 @@ func main() {
 		}
 
 		words := strings.SplitN(line.Line, " ", 1)
+
+		if id, err := strconv.Atoi(words[0]); err == nil {
+			found := false
+			for _, contact := range c.Contacts {
+				if int(contact.Id) == id {
+					c.SetCurrentContact(contact)
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				fmt.Printf("no contact %d\n", id)
+			}
+			continue
+		}
+
+		if c.CurrentContact != nil {
+			if len(words[0]) > 0 && words[0][0] == '/' {
+				words[0] = words[0][1:]
+			} else {
+				_, err := c.Backend.SendMessage(context.Background(), &rpc.Message{
+					Sender: &rpc.Entity{IsSelf: true},
+					Recipient: &rpc.Entity{
+						ContactId: c.CurrentContact.Id,
+						Address:   c.CurrentContact.Address,
+					},
+					Text: line.Line,
+				})
+				if err != nil {
+					fmt.Printf("send message error: %v\n", err)
+				}
+				continue
+			}
+		}
+
 		switch words[0] {
 		case "clear":
 			readline.ClearScreen(readline.Stdout)
@@ -92,7 +129,7 @@ func main() {
 				}
 				fmt.Printf(". %s\n", strings.ToLower(status.String()))
 				for _, contact := range contacts {
-					fmt.Printf("... %s\n", contact.Nickname)
+					fmt.Printf("... [%d] %s\n", contact.Id, contact.Nickname)
 				}
 			}
 

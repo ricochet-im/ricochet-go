@@ -6,6 +6,7 @@ import (
 	"golang.org/x/net/context"
 	"gopkg.in/readline.v1"
 	"log"
+	"strings"
 )
 
 type Client struct {
@@ -18,6 +19,8 @@ type Client struct {
 	// XXX threadsafety
 	NetworkStatus ricochet.NetworkStatus
 	Contacts      []*ricochet.Contact
+
+	CurrentContact *ricochet.Contact
 }
 
 // XXX need to handle backend connection loss/reconnection..
@@ -48,6 +51,22 @@ func (c *Client) Initialize() error {
 
 	// XXX block until populated/initialized?
 	return nil
+}
+
+func (c *Client) SetCurrentContact(contact *ricochet.Contact) {
+	c.CurrentContact = contact
+	if c.CurrentContact != nil {
+		config := *c.Input.Config
+		config.Prompt = fmt.Sprintf("%s > ", c.CurrentContact.Nickname)
+		config.UniqueEditLine = true
+		c.Input.SetConfig(&config)
+		fmt.Printf("--- %s (%s) ---\n", c.CurrentContact.Nickname, strings.ToLower(c.CurrentContact.Status.String()))
+	} else {
+		config := *c.Input.Config
+		config.Prompt = "> "
+		config.UniqueEditLine = false
+		c.Input.SetConfig(&config)
+	}
 }
 
 func (c *Client) monitorNetwork() {
@@ -152,6 +171,10 @@ func (c *Client) monitorContacts() {
 				log.Printf("updated contact: %v", contact)
 			}
 
+			if c.CurrentContact != nil && c.CurrentContact.Id == contact.Id {
+				c.SetCurrentContact(contact)
+			}
+
 		case ricochet.ContactEvent_DELETE:
 			if contact == nil {
 				log.Printf("Ignoring contact delete event with null contact")
@@ -171,6 +194,10 @@ func (c *Client) monitorContacts() {
 				log.Printf("Ignoring contact delete event for unknown contact: %v", contact)
 			} else {
 				log.Printf("deleted contact: %v", contact)
+			}
+
+			if c.CurrentContact != nil && c.CurrentContact.Id == contact.Id {
+				c.SetCurrentContact(nil)
 			}
 
 		default:
@@ -197,6 +224,48 @@ func (c *Client) monitorConversations() {
 			break
 		}
 
-		log.Printf("Conversation event: %v", event)
+		// XXX Should also handle POPULATE
+		if event.Type != ricochet.ConversationEvent_RECEIVE &&
+			event.Type != ricochet.ConversationEvent_SEND {
+			continue
+		}
+
+		message := event.Msg
+		if message == nil || message.Recipient == nil || message.Sender == nil {
+			log.Printf("Ignoring invalid conversation event: %v", event)
+			continue
+		}
+
+		var remoteContact *ricochet.Contact
+		var remoteEntity *ricochet.Entity
+
+		if !message.Sender.IsSelf {
+			remoteEntity = message.Sender
+		} else {
+			remoteEntity = message.Recipient
+		}
+
+		for _, contact := range c.Contacts {
+			if remoteEntity.ContactId == contact.Id && remoteEntity.Address == contact.Address {
+				remoteContact = contact
+				break
+			}
+		}
+
+		if remoteContact == nil {
+			log.Printf("Ignoring conversation event with unknown contact: %v", event)
+			continue
+		}
+
+		if remoteContact == c.CurrentContact {
+			// XXX so unsafe
+			if message.Sender.IsSelf {
+				fmt.Fprintf(c.Input.Stdout(), "\r%s > %s\n", remoteContact.Nickname, message.Text)
+			} else {
+				fmt.Fprintf(c.Input.Stdout(), "\r%s < %s\n", remoteContact.Nickname, message.Text)
+			}
+		} else if !message.Sender.IsSelf {
+			fmt.Fprintf(c.Input.Stdout(), "\r---- %s < %s\n", remoteContact.Nickname, message.Text)
+		}
 	}
 }
