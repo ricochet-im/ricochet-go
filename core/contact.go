@@ -221,7 +221,7 @@ func (c *Contact) connectOutbound(ctx context.Context, connChannel chan *protoco
 		}
 
 		log.Printf("Successful outbound connection to contact %s", hostname)
-		oc, err := c.core.Protocol.ConnectOpen(conn, hostname[0:16])
+		oc, err := protocol.Open(conn, hostname[0:16])
 		if err != nil {
 			log.Printf("Contact connection protocol failure: %s", err)
 			oc.Close()
@@ -242,6 +242,13 @@ func (c *Contact) connectOutbound(ctx context.Context, connChannel chan *protoco
 			// OnConnectionClosed. Alternatively, it will break because this
 			// is fragile and dumb.
 			// XXX BUG: This means no backoff for authentication failure
+			handler := &ProtocolConnection{
+				Conn:       oc,
+				Contact:    c,
+				MyHostname: c.core.Identity.Address()[9:],
+				PrivateKey: c.core.Identity.PrivateKey(),
+			}
+			go oc.Process(handler)
 			return
 		}
 	}

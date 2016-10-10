@@ -4,6 +4,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"errors"
+	protocol "github.com/s-rah/go-ricochet"
 	"github.com/special/notricochet/core/utils"
 	"github.com/yawning/bulb/utils/pkcs1"
 	"log"
@@ -98,6 +99,29 @@ func (me *Identity) setPrivateKey(key *rsa.PrivateKey) error {
 	return nil
 }
 
+type identityService struct {
+	Identity   *Identity
+	MyHostname string
+}
+
+func (is *identityService) OnNewConnection(oc *protocol.OpenConnection) {
+	log.Printf("Inbound connection accepted")
+	oc.MyHostname = is.MyHostname
+	// XXX Should have pre-auth handling, timeouts
+	identity := is.Identity
+	handler := &ProtocolConnection{
+		Conn: oc,
+		GetContactByHostname: func(hostname string) *Contact {
+			return identity.ContactList().ContactByAddress("ricochet:" + hostname)
+		},
+	}
+	go oc.Process(handler)
+}
+
+func (is *identityService) OnFailedConnection(err error) {
+	log.Printf("Inbound connection failed: %v", err)
+}
+
 // BUG(special): No error handling for failures under publishService
 func (me *Identity) publishService(key *rsa.PrivateKey) {
 	// This call will block until a control connection is available and the
@@ -127,7 +151,17 @@ func (me *Identity) publishService(key *rsa.PrivateKey) {
 	}
 
 	log.Printf("Identity service published, accepting connections")
-	go me.core.Protocol.ServeListener(listener)
+	is := &identityService{
+		Identity:   me,
+		MyHostname: me.Address()[9:],
+	}
+
+	err = protocol.Serve(listener, is)
+	if err != nil {
+		log.Printf("Identity listener failed: %v", err)
+		// XXX handle
+		return
+	}
 }
 
 func (me *Identity) Address() string {
