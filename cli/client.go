@@ -4,23 +4,22 @@ import (
 	"fmt"
 	"github.com/special/notricochet/rpc"
 	"golang.org/x/net/context"
-	"gopkg.in/readline.v1"
 	"log"
-	"strings"
 )
 
 type Client struct {
 	Backend ricochet.RicochetCoreClient
-	Input   *readline.Instance
+	Ui      *UI
 
 	ServerStatus ricochet.ServerStatusReply
 	Identity     ricochet.Identity
 
-	NetworkStatus  ricochet.NetworkStatus
-	Contacts       *ContactList
-	CurrentContact *Contact
+	NetworkStatus ricochet.NetworkStatus
+	Contacts      *ContactList
 
 	monitorsChannel   chan interface{}
+	blockChannel      chan struct{}
+	unblockChannel    chan struct{}
 	populatedContacts bool
 }
 
@@ -28,6 +27,8 @@ type Client struct {
 func (c *Client) Initialize() error {
 	c.Contacts = NewContactList()
 	c.monitorsChannel = make(chan interface{}, 10)
+	c.blockChannel = make(chan struct{})
+	c.unblockChannel = make(chan struct{})
 
 	// Query server status and version
 	status, err := c.Backend.GetServerStatus(context.Background(), &ricochet.ServerStatusRequest{
@@ -71,24 +72,18 @@ func (c *Client) Run() {
 			default:
 				log.Panicf("Unknown event type on monitor channel: %v", event)
 			}
+		case <-c.blockChannel:
+			<-c.unblockChannel
 		}
 	}
 }
 
-func (c *Client) SetCurrentContact(contact *Contact) {
-	c.CurrentContact = contact
-	if c.CurrentContact != nil {
-		config := *c.Input.Config
-		config.Prompt = fmt.Sprintf("%s > ", c.CurrentContact.Data.Nickname)
-		config.UniqueEditLine = true
-		c.Input.SetConfig(&config)
-		fmt.Printf("--- %s (%s) ---\n", c.CurrentContact.Data.Nickname, strings.ToLower(c.CurrentContact.Data.Status.String()))
-	} else {
-		config := *c.Input.Config
-		config.Prompt = "> "
-		config.UniqueEditLine = false
-		c.Input.SetConfig(&config)
-	}
+func (c *Client) Block() {
+	c.blockChannel <- struct{}{}
+}
+
+func (c *Client) Unblock() {
+	c.unblockChannel <- struct{}{}
 }
 
 func (c *Client) monitorNetwork() {
@@ -206,8 +201,8 @@ func (c *Client) onContactEvent(event *ricochet.ContactEvent) {
 
 		contact, _ := c.Contacts.Deleted(data)
 
-		if c.CurrentContact == contact {
-			c.SetCurrentContact(nil)
+		if c.Ui.CurrentContact == contact {
+			c.Ui.SetCurrentContact(nil)
 		}
 
 	default:
@@ -241,16 +236,7 @@ func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
 		return
 	}
 
-	if remoteContact == c.CurrentContact {
-		// XXX so unsafe
-		if message.Sender.IsSelf {
-			fmt.Fprintf(c.Input.Stdout(), "\r%s > %s\n", remoteContact.Data.Nickname, message.Text)
-		} else {
-			fmt.Fprintf(c.Input.Stdout(), "\r%s < %s\n", remoteContact.Data.Nickname, message.Text)
-		}
-	} else if !message.Sender.IsSelf {
-		fmt.Fprintf(c.Input.Stdout(), "\r---- %s < %s\n", remoteContact.Data.Nickname, message.Text)
-	}
+	c.Ui.PrintMessage(remoteContact, message.Sender.IsSelf, message.Text)
 
 	if !message.Sender.IsSelf {
 		backend := c.Backend
