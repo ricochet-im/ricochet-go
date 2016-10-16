@@ -50,6 +50,8 @@ func (oc *OnionConnector) Connect(address string, c context.Context) (net.Conn, 
 	for {
 		// XXX This waits to know SOCKS info, but does not wait for connection
 		// ready state; should it?
+		// XXX Also, we're supposed to change backoff when tor connectivity state
+		// changes, but this won't.
 		proxy, err := oc.Network.WaitForProxyDialer(options, c)
 		if err != nil {
 			return nil, err

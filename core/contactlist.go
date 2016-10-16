@@ -13,9 +13,7 @@ type ContactList struct {
 	mutex  sync.RWMutex
 	events *utils.Publisher
 
-	contacts         map[int]*Contact
-	outboundRequests map[int]*OutboundContactRequest
-	inboundRequests  map[int]*InboundContactRequest
+	contacts map[int]*Contact
 }
 
 func LoadContactList(core *Ricochet) (*ContactList, error) {
@@ -57,26 +55,6 @@ func (this *ContactList) Contacts() []*Contact {
 	re := make([]*Contact, 0, len(this.contacts))
 	for _, contact := range this.contacts {
 		re = append(re, contact)
-	}
-	return re
-}
-
-func (this *ContactList) OutboundRequests() []*OutboundContactRequest {
-	this.mutex.RLock()
-	defer this.mutex.RUnlock()
-	re := make([]*OutboundContactRequest, 0, len(this.outboundRequests))
-	for _, request := range this.outboundRequests {
-		re = append(re, request)
-	}
-	return re
-}
-
-func (this *ContactList) InboundRequests() []*InboundContactRequest {
-	this.mutex.RLock()
-	defer this.mutex.RUnlock()
-	re := make([]*InboundContactRequest, 0, len(this.inboundRequests))
-	for _, request := range this.inboundRequests {
-		re = append(re, request)
 	}
 	return re
 }
