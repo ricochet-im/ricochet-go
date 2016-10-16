@@ -54,16 +54,10 @@ func main() {
 		words := strings.SplitN(line.Line, " ", 1)
 
 		if id, err := strconv.Atoi(words[0]); err == nil {
-			found := false
-			for _, contact := range c.Contacts {
-				if int(contact.Id) == id {
-					c.SetCurrentContact(contact)
-					found = true
-					break
-				}
-			}
-
-			if !found {
+			contact := c.Contacts.ById(int32(id))
+			if contact != nil {
+				c.SetCurrentContact(contact)
+			} else {
 				fmt.Printf("no contact %d\n", id)
 			}
 			continue
@@ -76,8 +70,8 @@ func main() {
 				_, err := c.Backend.SendMessage(context.Background(), &rpc.Message{
 					Sender: &rpc.Entity{IsSelf: true},
 					Recipient: &rpc.Entity{
-						ContactId: c.CurrentContact.Id,
-						Address:   c.CurrentContact.Address,
+						ContactId: c.CurrentContact.Data.Id,
+						Address:   c.CurrentContact.Data.Address,
 					},
 					Text: line.Line,
 				})
@@ -116,9 +110,9 @@ func main() {
 			}
 
 		case "contacts":
-			byStatus := make(map[rpc.Contact_Status][]*rpc.Contact)
-			for _, contact := range c.Contacts {
-				byStatus[contact.Status] = append(byStatus[contact.Status], contact)
+			byStatus := make(map[rpc.Contact_Status][]*Contact)
+			for _, contact := range c.Contacts.Contacts {
+				byStatus[contact.Data.Status] = append(byStatus[contact.Data.Status], contact)
 			}
 
 			order := []rpc.Contact_Status{rpc.Contact_ONLINE, rpc.Contact_UNKNOWN, rpc.Contact_OFFLINE, rpc.Contact_REQUEST, rpc.Contact_REJECTED}
@@ -129,7 +123,7 @@ func main() {
 				}
 				fmt.Printf(". %s\n", strings.ToLower(status.String()))
 				for _, contact := range contacts {
-					fmt.Printf("... [%d] %s\n", contact.Id, contact.Nickname)
+					fmt.Printf("... [%d] %s\n", contact.Data.Id, contact.Data.Nickname)
 				}
 			}
 

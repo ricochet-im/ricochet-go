@@ -17,14 +17,15 @@ type Client struct {
 	Identity     ricochet.Identity
 
 	// XXX threadsafety
-	NetworkStatus ricochet.NetworkStatus
-	Contacts      []*ricochet.Contact
-
-	CurrentContact *ricochet.Contact
+	NetworkStatus  ricochet.NetworkStatus
+	Contacts       *ContactList
+	CurrentContact *Contact
 }
 
 // XXX need to handle backend connection loss/reconnection..
 func (c *Client) Initialize() error {
+	c.Contacts = NewContactList()
+
 	// Query server status and version
 	status, err := c.Backend.GetServerStatus(context.Background(), &ricochet.ServerStatusRequest{
 		RpcVersion: 1,
@@ -53,14 +54,14 @@ func (c *Client) Initialize() error {
 	return nil
 }
 
-func (c *Client) SetCurrentContact(contact *ricochet.Contact) {
+func (c *Client) SetCurrentContact(contact *Contact) {
 	c.CurrentContact = contact
 	if c.CurrentContact != nil {
 		config := *c.Input.Config
-		config.Prompt = fmt.Sprintf("%s > ", c.CurrentContact.Nickname)
+		config.Prompt = fmt.Sprintf("%s > ", c.CurrentContact.Data.Nickname)
 		config.UniqueEditLine = true
 		c.Input.SetConfig(&config)
-		fmt.Printf("--- %s (%s) ---\n", c.CurrentContact.Nickname, strings.ToLower(c.CurrentContact.Status.String()))
+		fmt.Printf("--- %s (%s) ---\n", c.CurrentContact.Data.Nickname, strings.ToLower(c.CurrentContact.Data.Status.String()))
 	} else {
 		config := *c.Input.Config
 		config.Prompt = "> "
@@ -118,7 +119,7 @@ func (c *Client) monitorContacts() {
 		}
 
 		if contact := event.GetContact(); contact != nil {
-			c.Contacts = append(c.Contacts, contact)
+			c.Contacts.Populate(contact)
 		} else if request := event.GetRequest(); request != nil {
 			// XXX handle requests
 			log.Printf("XXX contact requests not supported")
@@ -127,7 +128,7 @@ func (c *Client) monitorContacts() {
 		}
 	}
 
-	log.Printf("Loaded %d contacts", len(c.Contacts))
+	log.Printf("Loaded %d contacts", len(c.Contacts.Contacts))
 
 	for {
 		event, err := stream.Recv()
@@ -137,66 +138,39 @@ func (c *Client) monitorContacts() {
 			break
 		}
 
-		contact := event.GetContact()
+		data := event.GetContact()
 
 		switch event.Type {
 		case ricochet.ContactEvent_ADD:
-			if contact == nil {
-				log.Printf("Ignoring contact add event with null contact")
+			if data == nil {
+				log.Printf("Ignoring contact add event with null data")
 				continue
 			}
-			c.Contacts = append(c.Contacts, contact)
-			log.Printf("new contact: %v", contact)
+
+			c.Contacts.Added(data)
 
 		case ricochet.ContactEvent_UPDATE:
-			if contact == nil {
-				log.Printf("Ignoring contact update event with null contact")
+			if data == nil {
+				log.Printf("Ignoring contact update event with null data")
 				continue
 			}
 
-			var found bool
-			for i, match := range c.Contacts {
-				if match.Id == contact.Id && match.Address == contact.Address {
-					contacts := append(c.Contacts[0:i], contact)
-					contacts = append(contacts, c.Contacts[i+1:]...)
-					c.Contacts = contacts
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				log.Printf("Ignoring contact update event for unknown contact: %v", contact)
+			contact := c.Contacts.ByIdAndAddress(data.Id, data.Address)
+			if contact == nil {
+				log.Printf("Ignoring contact update event for unknown contact: %v", data)
 			} else {
-				log.Printf("updated contact: %v", contact)
-			}
-
-			if c.CurrentContact != nil && c.CurrentContact.Id == contact.Id {
-				c.SetCurrentContact(contact)
+				contact.Updated(data)
 			}
 
 		case ricochet.ContactEvent_DELETE:
-			if contact == nil {
-				log.Printf("Ignoring contact delete event with null contact")
+			if data == nil {
+				log.Printf("Ignoring contact delete event with null data")
 				continue
 			}
 
-			var found bool
-			for i, match := range c.Contacts {
-				if match.Id == contact.Id && match.Address == contact.Address {
-					c.Contacts = append(c.Contacts[0:i], c.Contacts[i+1:]...)
-					found = true
-					break
-				}
-			}
+			contact, _ := c.Contacts.Deleted(data)
 
-			if !found {
-				log.Printf("Ignoring contact delete event for unknown contact: %v", contact)
-			} else {
-				log.Printf("deleted contact: %v", contact)
-			}
-
-			if c.CurrentContact != nil && c.CurrentContact.Id == contact.Id {
+			if c.CurrentContact == contact {
 				c.SetCurrentContact(nil)
 			}
 
@@ -236,22 +210,14 @@ func (c *Client) monitorConversations() {
 			continue
 		}
 
-		var remoteContact *ricochet.Contact
 		var remoteEntity *ricochet.Entity
-
 		if !message.Sender.IsSelf {
 			remoteEntity = message.Sender
 		} else {
 			remoteEntity = message.Recipient
 		}
 
-		for _, contact := range c.Contacts {
-			if remoteEntity.ContactId == contact.Id && remoteEntity.Address == contact.Address {
-				remoteContact = contact
-				break
-			}
-		}
-
+		remoteContact := c.Contacts.ByIdAndAddress(remoteEntity.ContactId, remoteEntity.Address)
 		if remoteContact == nil {
 			log.Printf("Ignoring conversation event with unknown contact: %v", event)
 			continue
@@ -260,12 +226,12 @@ func (c *Client) monitorConversations() {
 		if remoteContact == c.CurrentContact {
 			// XXX so unsafe
 			if message.Sender.IsSelf {
-				fmt.Fprintf(c.Input.Stdout(), "\r%s > %s\n", remoteContact.Nickname, message.Text)
+				fmt.Fprintf(c.Input.Stdout(), "\r%s > %s\n", remoteContact.Data.Nickname, message.Text)
 			} else {
-				fmt.Fprintf(c.Input.Stdout(), "\r%s < %s\n", remoteContact.Nickname, message.Text)
+				fmt.Fprintf(c.Input.Stdout(), "\r%s < %s\n", remoteContact.Data.Nickname, message.Text)
 			}
 		} else if !message.Sender.IsSelf {
-			fmt.Fprintf(c.Input.Stdout(), "\r---- %s < %s\n", remoteContact.Nickname, message.Text)
+			fmt.Fprintf(c.Input.Stdout(), "\r---- %s < %s\n", remoteContact.Data.Nickname, message.Text)
 		}
 
 		if !message.Sender.IsSelf {
