@@ -21,11 +21,14 @@ type Identity struct {
 	address     string
 	privateKey  *rsa.PrivateKey
 	contactList *ContactList
+
+	ConversationStream *utils.Publisher
 }
 
 func CreateIdentity(core *Ricochet) (*Identity, error) {
 	me := &Identity{
-		core: core,
+		core:               core,
+		ConversationStream: utils.CreatePublisher(),
 	}
 
 	if err := me.loadIdentity(); err != nil {

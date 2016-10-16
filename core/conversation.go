@@ -1,41 +1,59 @@
 package core
 
 import (
+	"errors"
+	protocol "github.com/s-rah/go-ricochet"
 	"github.com/special/notricochet/core/utils"
 	"github.com/special/notricochet/rpc"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 )
 
-// XXX threading model.. this one isn't great
+// XXX should have limits on backlog size/duration
 
-// XXX Should probably be under core or identity
-var conversationStream *utils.Publisher = utils.CreatePublisher()
+// XXX populate will bring clients up to date, but they have no way
+// of knowing which messages have been seen before. Likewise, if multiple
+// clients are attached, there is no way to sync unread state between
+// them. Implies that it makes sense for clients to report to backend
+// when a message is "seen".
 
 type Conversation struct {
-	Core    *Ricochet
 	Contact *Contact
 
 	mutex sync.Mutex
 
-	localEntity  *ricochet.Entity
-	remoteEntity *ricochet.Entity
-	messages     []*ricochet.Message
+	localEntity       *ricochet.Entity
+	remoteEntity      *ricochet.Entity
+	messages          []*ricochet.Message
+	lastSentMessageId uint32
+
+	events *utils.Publisher
 }
 
-func NewConversation(core *Ricochet, contact *Contact, remoteEntity *ricochet.Entity) *Conversation {
+func NewConversation(contact *Contact, remoteEntity *ricochet.Entity, eventStream *utils.Publisher) *Conversation {
 	return &Conversation{
-		Core:         core,
 		Contact:      contact,
 		localEntity:  &ricochet.Entity{IsSelf: true},
 		remoteEntity: remoteEntity,
 		messages:     make([]*ricochet.Message, 0),
+		events:       eventStream,
 	}
 }
 
-func ConversationEventMonitor() utils.Subscribable {
-	return conversationStream
+func (c *Conversation) EventMonitor() utils.Subscribable {
+	return c.events
+}
+
+func (c *Conversation) Messages() []*ricochet.Message {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	re := make([]*ricochet.Message, 0, len(c.messages))
+	for _, message := range c.messages {
+		re = append(re, message)
+	}
+	return re
 }
 
 func (c *Conversation) Receive(id uint64, timestamp int64, text string) {
@@ -47,26 +65,24 @@ func (c *Conversation) Receive(id uint64, timestamp int64, text string) {
 		Status:     ricochet.Message_RECEIVED,
 		Text:       text,
 	}
-	// XXX container
-	// XXX limit backlog/etc
-	c.mutex.Lock()
-	c.messages = append(c.messages, message)
-	log.Printf("Conversation received message: %v", message)
-	c.mutex.Unlock()
 
-	// XXX Technically these aren't guaranteed to be in order (because
-	// the lock has been released) or to all arrive (because of publisher's
-	// dropping behavior)...
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	c.messages = append(c.messages, message)
 	event := ricochet.ConversationEvent{
 		Type: ricochet.ConversationEvent_RECEIVE,
 		Msg:  message,
 	}
-	conversationStream.Publish(event)
+	c.events.Publish(event)
 }
 
 func (c *Conversation) UpdateSentStatus(id uint64, success bool) {
 	c.mutex.Lock()
-	for _, message := range c.messages {
+	defer c.mutex.Unlock()
+
+	for i := len(c.messages) - 1; i >= 0; i-- {
+		message := c.messages[i]
 		if message.Status != ricochet.Message_SENDING || message.Identifier != id {
 			continue
 		}
@@ -77,58 +93,104 @@ func (c *Conversation) UpdateSentStatus(id uint64, success bool) {
 			message.Status = ricochet.Message_ERROR
 		}
 
-		c.mutex.Unlock()
 		event := ricochet.ConversationEvent{
 			Type: ricochet.ConversationEvent_UPDATE,
 			Msg:  message,
 		}
-		conversationStream.Publish(event)
+		c.events.Publish(event)
 		return
 	}
-	c.mutex.Unlock()
+
+	log.Printf("Ignoring ack for unknown message id %d", id)
 }
 
 func (c *Conversation) Send(text string) (*ricochet.Message, error) {
-	// XXX protocol
-	// XXX check that text is ok, get identifier, etc
-	// XXX decide whether sending or queued based on state
+	if len(text) == 0 {
+		return nil, errors.New("Message text is empty")
+	} else if len(text) > 2000 {
+		return nil, errors.New("Message is too long")
+	}
+
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if c.lastSentMessageId == 0 {
+		// Rand is seeded by Ricochet.Init
+		c.lastSentMessageId = rand.Uint32()
+	}
+	if c.lastSentMessageId++; c.lastSentMessageId == 0 {
+		c.lastSentMessageId++
+	}
+
 	message := &ricochet.Message{
 		Sender:     c.localEntity,
 		Recipient:  c.remoteEntity,
 		Timestamp:  time.Now().Unix(),
-		Identifier: 0, // XXX
+		Identifier: uint64(c.lastSentMessageId),
 		Status:     ricochet.Message_QUEUED,
 		Text:       text,
 	}
 
-	// XXX witness thread disaster
+	// XXX threading mess, and probably deadlockable. Need better API for conn.
 	conn := c.Contact.Connection()
 	if conn != nil {
-		// XXX hardcoded channel IDs, also channel IDs shouldn't be exposed
-		channelId := int32(7)
-		if !conn.Client {
-			channelId++
-		}
-		// XXX no error handling
-		if conn.GetChannelType(channelId) != "im.ricochet.chat" {
-			conn.OpenChatChannel(channelId)
-		}
-
-		// XXX no message IDs, no acks
-		conn.SendMessage(channelId, text)
+		sendMessageToConnection(conn, message)
 		message.Status = ricochet.Message_SENDING
 	}
 
-	c.mutex.Lock()
 	c.messages = append(c.messages, message)
-	log.Printf("Conversation sent message: %v", message)
-	c.mutex.Unlock()
-
 	event := ricochet.ConversationEvent{
 		Type: ricochet.ConversationEvent_SEND,
 		Msg:  message,
 	}
-	conversationStream.Publish(event)
+	c.events.Publish(event)
 
 	return message, nil
+}
+
+// Send all messages in the QUEUED state to the contact, if
+// a connection is available. Should be called after a new
+// connection is established.
+func (c *Conversation) SendQueuedMessages() int {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	conn := c.Contact.Connection()
+	if conn == nil {
+		return 0
+	}
+
+	sent := 0
+	for _, message := range c.messages {
+		if message.Status != ricochet.Message_QUEUED {
+			continue
+		}
+
+		sendMessageToConnection(conn, message)
+		message.Status = ricochet.Message_SENDING
+		sent++
+
+		event := ricochet.ConversationEvent{
+			Type: ricochet.ConversationEvent_UPDATE,
+			Msg:  message,
+		}
+		c.events.Publish(event)
+	}
+
+	return sent
+}
+
+func sendMessageToConnection(conn *protocol.OpenConnection, message *ricochet.Message) {
+	// XXX hardcoded channel IDs, also channel IDs shouldn't be exposed
+	channelId := int32(7)
+	if !conn.Client {
+		channelId++
+	}
+	// XXX no error handling
+	if conn.GetChannelType(channelId) != "im.ricochet.chat" {
+		conn.OpenChatChannel(channelId)
+	}
+
+	// XXX no message IDs
+	conn.SendMessage(channelId, message.Text)
 }

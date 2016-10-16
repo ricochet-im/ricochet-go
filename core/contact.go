@@ -120,7 +120,7 @@ func (c *Contact) Conversation() *Conversation {
 			ContactId: int32(c.id),
 			Address:   "ricochet:" + c.data.Hostname[0:16],
 		}
-		c.conversation = NewConversation(c.core, c, entity)
+		c.conversation = NewConversation(c, entity, c.core.Identity.ConversationStream)
 	}
 	return c.conversation
 }
@@ -318,6 +318,12 @@ func (c *Contact) setConnection(conn *protocol.OpenConnection) error {
 		},
 	}
 	c.events.Publish(event)
+
+	// Send any queued messages
+	sent := c.Conversation().SendQueuedMessages()
+	if sent > 0 {
+		log.Printf("Sent %d queued messages to contact", sent)
+	}
 
 	return nil
 }

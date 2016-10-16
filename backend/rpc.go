@@ -150,10 +150,37 @@ func (s *RpcServer) RejectInboundRequest(ctx context.Context, req *rpc.ContactRe
 }
 
 func (s *RpcServer) MonitorConversations(req *rpc.MonitorConversationsRequest, stream rpc.RicochetCore_MonitorConversationsServer) error {
-	monitor := ricochet.ConversationEventMonitor().Subscribe(100)
-	defer ricochet.ConversationEventMonitor().Unsubscribe(monitor)
+	// XXX Technically there is a race between starting to monitor
+	// and the list and state of messages used to populate, that could
+	// result in duplicate messages or other weird behavior.
+	// Same problem exists for other places this pattern is used.
+	monitor := s.core.Identity.ConversationStream.Subscribe(100)
+	defer s.core.Identity.ConversationStream.Unsubscribe(monitor)
 
-	// XXX should populate
+	{
+		// Populate with existing conversations
+		contacts := s.core.Identity.ContactList().Contacts()
+		for _, contact := range contacts {
+			messages := contact.Conversation().Messages()
+			for _, message := range messages {
+				event := rpc.ConversationEvent{
+					Type: rpc.ConversationEvent_POPULATE,
+					Msg:  message,
+				}
+				if err := stream.Send(&event); err != nil {
+					return err
+				}
+			}
+		}
+
+		// End population with an empty populate event
+		event := rpc.ConversationEvent{
+			Type: rpc.ConversationEvent_POPULATE,
+		}
+		if err := stream.Send(&event); err != nil {
+			return err
+		}
+	}
 
 	for {
 		event, ok := (<-monitor).(rpc.ConversationEvent)
