@@ -45,6 +45,10 @@ service RicochetCore {
     // Open a stream to monitor messages in conversations with contacts.
     rpc MonitorConversations (MonitorConversationsRequest) returns (stream ConversationEvent);
     rpc SendMessage (Message) returns (Message);
+    rpc MarkConversationRead (MarkConversationReadRequest) returns (Reply);
+}
+
+message Reply {
 }
 
 message ServerStatusRequest {

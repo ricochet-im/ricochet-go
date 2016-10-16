@@ -219,3 +219,17 @@ func (s *RpcServer) SendMessage(ctx context.Context, req *rpc.Message) (*rpc.Mes
 
 	return message, nil
 }
+
+func (s *RpcServer) MarkConversationRead(ctx context.Context, req *rpc.MarkConversationReadRequest) (*rpc.Reply, error) {
+	if req.Entity == nil || req.Entity.IsSelf {
+		return nil, errors.New("Invalid entity")
+	}
+
+	contact := s.core.Identity.ContactList().ContactByAddress(req.Entity.Address)
+	if contact == nil || (req.Entity.ContactId != 0 && int32(contact.Id()) != req.Entity.ContactId) {
+		return nil, errors.New("Unknown entity")
+	}
+
+	contact.Conversation().MarkReadBeforeMessage(req.LastRecvIdentifier)
+	return &rpc.Reply{}, nil
+}

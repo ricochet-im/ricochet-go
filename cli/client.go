@@ -267,5 +267,19 @@ func (c *Client) monitorConversations() {
 		} else if !message.Sender.IsSelf {
 			fmt.Fprintf(c.Input.Stdout(), "\r---- %s < %s\n", remoteContact.Nickname, message.Text)
 		}
+
+		if !message.Sender.IsSelf {
+			backend := c.Backend
+			message := message
+			go func() {
+				_, err := backend.MarkConversationRead(context.Background(), &ricochet.MarkConversationReadRequest{
+					Entity:             message.Sender,
+					LastRecvIdentifier: message.Identifier,
+				})
+				if err != nil {
+					log.Printf("Mark conversation read failed: %v", err)
+				}
+			}()
+		}
 	}
 }

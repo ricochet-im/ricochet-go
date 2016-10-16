@@ -35,14 +35,22 @@ message Message {
 
     enum Status {
         NULL = 0;
-        RECEIVED = 1;
+        ERROR = 1;
+        // Outbound
         QUEUED = 2;
         SENDING = 3;
         DELIVERED = 4;
-        ERROR = 5;
+        // Inbound
+        UNREAD = 5;
+        READ = 6;
     }
     Status status = 5;
 
     string text = 6;
+}
+
+message MarkConversationReadRequest {
+    Entity entity = 1;
+    uint64 lastRecvIdentifier = 2;
 }
 

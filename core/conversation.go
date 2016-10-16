@@ -13,12 +13,6 @@ import (
 
 // XXX should have limits on backlog size/duration
 
-// XXX populate will bring clients up to date, but they have no way
-// of knowing which messages have been seen before. Likewise, if multiple
-// clients are attached, there is no way to sync unread state between
-// them. Implies that it makes sense for clients to report to backend
-// when a message is "seen".
-
 type Conversation struct {
 	Contact *Contact
 
@@ -62,7 +56,7 @@ func (c *Conversation) Receive(id uint64, timestamp int64, text string) {
 		Recipient:  c.localEntity,
 		Timestamp:  timestamp,
 		Identifier: id,
-		Status:     ricochet.Message_RECEIVED,
+		Status:     ricochet.Message_UNREAD,
 		Text:       text,
 	}
 
@@ -193,4 +187,31 @@ func sendMessageToConnection(conn *protocol.OpenConnection, message *ricochet.Me
 
 	// XXX no message IDs
 	conn.SendMessage(channelId, message.Text)
+}
+
+// XXX This is inefficient -- it'll usually only be marking the last message
+// or few messages. Need a better way to know what's unread.
+func (c *Conversation) MarkReadBeforeMessage(msgId uint64) int {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	marked := 0
+	for _, message := range c.messages {
+		if message.Status == ricochet.Message_UNREAD {
+			message.Status = ricochet.Message_READ
+			marked++
+
+			event := ricochet.ConversationEvent{
+				Type: ricochet.ConversationEvent_UPDATE,
+				Msg:  message,
+			}
+			c.events.Publish(event)
+		}
+
+		if message.Identifier == msgId && message.Recipient.IsSelf {
+			break
+		}
+	}
+
+	return marked
 }
