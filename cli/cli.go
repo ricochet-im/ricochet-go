@@ -42,6 +42,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	go c.Run()
+
 	input.SetPrompt("> ")
 	for {
 		line := input.Line()
