@@ -17,10 +17,14 @@ type Client struct {
 	NetworkStatus ricochet.NetworkStatus
 	Contacts      *ContactList
 
-	monitorsChannel   chan interface{}
-	blockChannel      chan struct{}
-	unblockChannel    chan struct{}
-	populatedContacts bool
+	monitorsChannel chan interface{}
+	blockChannel    chan struct{}
+	unblockChannel  chan struct{}
+
+	populatedChannel       chan struct{}
+	populatedNetwork       bool
+	populatedContacts      bool
+	populatedConversations bool
 }
 
 // XXX need to handle backend connection loss/reconnection..
@@ -29,6 +33,7 @@ func (c *Client) Initialize() error {
 	c.monitorsChannel = make(chan interface{}, 10)
 	c.blockChannel = make(chan struct{})
 	c.unblockChannel = make(chan struct{})
+	c.populatedChannel = make(chan struct{})
 
 	// Query server status and version
 	status, err := c.Backend.GetServerStatus(context.Background(), &ricochet.ServerStatusRequest{
@@ -39,7 +44,7 @@ func (c *Client) Initialize() error {
 	}
 	c.ServerStatus = *status
 	if status.RpcVersion != 1 {
-		return fmt.Errorf("Unsupported backend RPC version %d", status.RpcVersion)
+		return fmt.Errorf("unsupported backend RPC version %d", status.RpcVersion)
 	}
 
 	// Query identity
@@ -54,7 +59,11 @@ func (c *Client) Initialize() error {
 	go c.monitorContacts()
 	// Conversation monitor isn't started until contacts are populated
 
-	// XXX block until populated/initialized?
+	// Spawn routine to handle all events
+	go c.Run()
+
+	// Block until all state is populated
+	<-c.populatedChannel
 	return nil
 }
 
@@ -84,6 +93,18 @@ func (c *Client) Block() {
 
 func (c *Client) Unblock() {
 	c.unblockChannel <- struct{}{}
+}
+
+func (c *Client) IsInitialized() bool {
+	return c.populatedChannel == nil
+}
+
+func (c *Client) checkIfPopulated() {
+	if c.populatedChannel != nil && c.populatedContacts &&
+		c.populatedConversations && c.populatedNetwork {
+		close(c.populatedChannel)
+		c.populatedChannel = nil
+	}
 }
 
 func (c *Client) monitorNetwork() {
@@ -149,6 +170,8 @@ func (c *Client) monitorConversations() {
 func (c *Client) onNetworkStatus(status *ricochet.NetworkStatus) {
 	log.Printf("Network status changed: %v", status)
 	c.NetworkStatus = *status
+	c.populatedNetwork = true
+	c.checkIfPopulated()
 }
 
 func (c *Client) onContactEvent(event *ricochet.ContactEvent) {
@@ -161,10 +184,13 @@ func (c *Client) onContactEvent(event *ricochet.ContactEvent) {
 
 	switch event.Type {
 	case ricochet.ContactEvent_POPULATE:
-		// Populate is terminated by a nil subject
-		if event.Subject == nil {
+		if c.populatedContacts {
+			log.Printf("Ignoring unexpected contact populate event: %v", event)
+		} else if event.Subject == nil {
+			// Populate is terminated by a nil subject
 			c.populatedContacts = true
 			log.Printf("Loaded %d contacts", len(c.Contacts.Contacts))
+			c.checkIfPopulated()
 			go c.monitorConversations()
 		} else if data != nil {
 			c.Contacts.Populate(data)
@@ -218,6 +244,13 @@ func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
 	}
 
 	message := event.Msg
+
+	if event.Type == ricochet.ConversationEvent_POPULATE && message == nil {
+		c.populatedConversations = true
+		c.checkIfPopulated()
+		return
+	}
+
 	if message == nil || message.Recipient == nil || message.Sender == nil {
 		log.Printf("Ignoring invalid conversation event: %v", event)
 		return
@@ -236,8 +269,11 @@ func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
 		return
 	}
 
-	c.Ui.PrintMessage(remoteContact, message.Sender.IsSelf, message.Text)
+	if event.Type != ricochet.ConversationEvent_POPULATE {
+		c.Ui.PrintMessage(remoteContact, message.Sender.IsSelf, message.Text)
+	}
 
+	// XXX Shouldn't mark until displayed
 	if !message.Sender.IsSelf {
 		backend := c.Backend
 		message := message
@@ -250,5 +286,21 @@ func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
 				log.Printf("Mark conversation read failed: %v", err)
 			}
 		}()
+	}
+}
+
+func (c *Client) NetworkControlStatus() ricochet.TorControlStatus {
+	if c.NetworkStatus.Control != nil {
+		return *c.NetworkStatus.Control
+	} else {
+		return ricochet.TorControlStatus{}
+	}
+}
+
+func (c *Client) NetworkConnectionStatus() ricochet.TorConnectionStatus {
+	if c.NetworkStatus.Connection != nil {
+		return *c.NetworkStatus.Connection
+	} else {
+		return ricochet.TorConnectionStatus{}
 	}
 }

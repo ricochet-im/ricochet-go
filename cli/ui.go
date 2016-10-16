@@ -87,14 +87,52 @@ func (ui *UI) Execute(line string) error {
 	case "contacts":
 		ui.ListContacts()
 
+	case "log":
+		fmt.Print(LogBuffer.String())
+
 	case "help":
 		fallthrough
 
 	default:
-		fmt.Println("Commands: clear, quit, status, connect, disconnect, contacts, help")
+		fmt.Println("Commands: clear, quit, status, connect, disconnect, contacts, log, help")
 	}
 
 	return nil
+}
+
+func (ui *UI) PrintStatus() {
+	controlStatus := ui.Client.NetworkControlStatus()
+	connectionStatus := ui.Client.NetworkConnectionStatus()
+
+	switch controlStatus.Status {
+	case ricochet.TorControlStatus_STOPPED:
+		fmt.Fprintf(ui.Input.Stdout(), "Network is stopped -- type 'connect' to go online\n")
+
+	case ricochet.TorControlStatus_ERROR:
+		fmt.Fprintf(ui.Input.Stdout(), "Network error: %s\n", controlStatus.ErrorMessage)
+
+	case ricochet.TorControlStatus_CONNECTING:
+		fmt.Fprintf(ui.Input.Stdout(), "Network connecting...\n")
+
+	case ricochet.TorControlStatus_CONNECTED:
+		switch connectionStatus.Status {
+		case ricochet.TorConnectionStatus_UNKNOWN:
+			fallthrough
+		case ricochet.TorConnectionStatus_OFFLINE:
+			fmt.Fprintf(ui.Input.Stdout(), "Network is offline\n")
+
+		case ricochet.TorConnectionStatus_BOOTSTRAPPING:
+			fmt.Fprintf(ui.Input.Stdout(), "Network bootstrapping: %s\n", connectionStatus.BootstrapProgress)
+
+		case ricochet.TorConnectionStatus_READY:
+			fmt.Fprintf(ui.Input.Stdout(), "Network is online\n")
+		}
+	}
+
+	fmt.Fprintf(ui.Input.Stdout(), "Your ricochet ID is %s\n", ui.Client.Identity.Address)
+
+	// no. contacts, contact reqs, online contacts
+	// unread messages
 }
 
 func (ui *UI) PrintMessage(contact *Contact, outbound bool, text string) {

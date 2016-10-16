@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	rpc "github.com/special/notricochet/rpc"
 	"google.golang.org/grpc"
@@ -13,21 +14,23 @@ const (
 	defaultAddress = "127.0.0.1:58281"
 )
 
-func main() {
-	conn, err := grpc.Dial(defaultAddress, grpc.WithInsecure())
-	if err != nil {
-		fmt.Printf("connection failed: %v\n", err)
-		os.Exit(1)
-	}
-	defer conn.Close()
+var LogBuffer bytes.Buffer
 
+func main() {
 	input, err := readline.NewEx(&readline.Config{})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 	defer input.Close()
-	log.SetOutput(input.Stdout())
+	log.SetOutput(&LogBuffer)
+
+	conn, err := grpc.Dial(defaultAddress, grpc.WithInsecure())
+	if err != nil {
+		fmt.Printf("connection failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
 
 	client := &Client{
 		Backend: rpc.NewRicochetCoreClient(conn),
@@ -38,11 +41,17 @@ func main() {
 	}
 	client.Ui = ui
 
-	if err := client.Initialize(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+	fmt.Print("Connecting to backend...\n")
 
-	go client.Run()
+	go func() {
+		if err := client.Initialize(); err != nil {
+			fmt.Printf("Error: %s\n", err)
+			os.Exit(1)
+		}
+		client.Block()
+		ui.PrintStatus()
+		client.Unblock()
+	}()
+
 	ui.CommandLoop()
 }
