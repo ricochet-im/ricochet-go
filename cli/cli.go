@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	rpc "github.com/special/notricochet/rpc"
+	rpc "github.com/ricochet-im/ricochet-go/rpc"
 	"google.golang.org/grpc"
 	"gopkg.in/readline.v1"
 	"log"

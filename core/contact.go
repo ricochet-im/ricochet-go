@@ -3,8 +3,8 @@ package core
 import (
 	"fmt"
 	protocol "github.com/s-rah/go-ricochet"
-	"github.com/special/notricochet/core/utils"
-	"github.com/special/notricochet/rpc"
+	"github.com/ricochet-im/ricochet-go/core/utils"
+	"github.com/ricochet-im/ricochet-go/rpc"
 	"golang.org/x/net/context"
 	"log"
 	"strconv"

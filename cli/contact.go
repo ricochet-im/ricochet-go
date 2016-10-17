@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/special/notricochet/rpc"
+	"github.com/ricochet-im/ricochet-go/rpc"
 )
 
 type ContactList struct {

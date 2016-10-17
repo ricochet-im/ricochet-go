@@ -3,8 +3,8 @@ package core
 import (
 	"crypto"
 	"errors"
-	"github.com/special/notricochet/core/utils"
-	"github.com/special/notricochet/rpc"
+	"github.com/ricochet-im/ricochet-go/core/utils"
+	"github.com/ricochet-im/ricochet-go/rpc"
 	"github.com/yawning/bulb"
 	bulbutils "github.com/yawning/bulb/utils"
 	"golang.org/x/net/context"

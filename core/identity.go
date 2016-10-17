@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	protocol "github.com/s-rah/go-ricochet"
-	"github.com/special/notricochet/core/utils"
+	"github.com/ricochet-im/ricochet-go/core/utils"
 	"github.com/yawning/bulb/utils/pkcs1"
 	"log"
 	"sync"

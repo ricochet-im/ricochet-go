@@ -3,8 +3,8 @@ package core
 import (
 	"errors"
 	"fmt"
-	"github.com/special/notricochet/core/utils"
-	"github.com/special/notricochet/rpc"
+	"github.com/ricochet-im/ricochet-go/core/utils"
+	"github.com/ricochet-im/ricochet-go/rpc"
 	"strconv"
 	"sync"
 )

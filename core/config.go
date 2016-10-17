@@ -42,7 +42,7 @@ type ConfigIdentity struct {
 func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{
 		path:     configPath,
-		filePath: filepath.Join(configPath, "notricochet.json"),
+		filePath: filepath.Join(configPath, "ricochet.json"),
 	}
 
 	data, err := ioutil.ReadFile(config.filePath)
