@@ -1,24 +1,35 @@
-This is an idea for the architecture of a Ricochet client. Don't get excited. It doesn't do anything.
+Experimental!
+-------------
 
-The idea is to implement all client backend logic in Go, and export a RPC API for frontends.
+This is an experimental, in-development Ricochet client. If you want something
+you can use, try the mainline [Ricochet](https://github.com/ricochet-im/ricochet).
 
-Benefits:
+Compared to the existing Ricochet client, the idea here is to:
 
-* We can have all network-facing and critical logic in Go, without being forced to use Go for frontends (because it lacks decent UI capability)
-* We can keep the current Qt UI implementation as one frontend
-* It's easy to build new frontends in anything that can use gRPC (like **cli**)
-* Backends are headless and frontends are detachable and interchangable
-* Can do some fancy sandboxing
+* Implement a client in Go, because it's memory-safe, easier to write and contribute to, and doesn't depend on a huge UI library
+* Split the client into a multiprocess RPC backend/frontend architecture, so that UI implementations can be easily developed in any language/environment
+* Build a code base that is easier and quicker to experiment with
+* Create some forward momentum
 
-Other ideas:
+This design has some interesting benefits:
 
-* This is currently using RPC only for the backend<->frontend; would it make sense to RPC any other layers or distinct components? Could have security benefits.
-* In particular, we still have one process that has access to private keys, tor config, and untrusted network traffic. That sucks.
-* Can do frontend connection to backend over authorized onion for advanced setups
+* All network-facing and critical logic is in Go, but frontends can be in any language -- Go currently lacks decent UI frameworks. This could also be useful for mobile applications.
+* The existing Qt UI can be adapted as a frontend, without any UX changes
+* The backend is headless and could be run remotely (over an authorized hidden service, perhaps). Frontends are detachable and interchangable. It's possible to use multiple frontends simultaneously.
+* UI and network components can be sandboxed separately on systems that support it (e.g. Subgraph)
 
-Structure:
+Status
+------
 
-* **core** is the client logic implementation
-* **rpc** has gRPC/protobuf definitions & generated code
-* **backend** is the backend RPC server
-* **cli** is an example frontend client
+This is not ready or safe to use. Some functionality works if you get a proper environment set up. Development notes are available at in the Projects or Issues tab. Pull requests & thoughts always welcome.
+
+Architecture
+------------
+
+**core** implements Ricochet's client logic. It currently depends on [bulb](https://github.com/yawning/bulb) and @s-rah's [go-ricochet](https://github.com/s-rah/go-ricochet) protocol implementation.
+
+**rpc** defines a [gRPC](http://www.grpc.io/) and [protobuf](https://developers.google.com/protocol-buffers/) API for communication between the client backend and frontend. This API is for trusted backends to communicate with frontend UI clients, and it's expected that both will usually be on the same machine and invisible to the end-user. Anything capable of speaking gRPC could implement a frontend.
+
+**backend** is the backend application, providing the gRPC server and using the core implementation.
+
+**cli** is the first frontend, a Go readline-style text-only client.
