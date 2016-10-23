@@ -6,21 +6,29 @@ import (
 	"github.com/chzyer/readline"
 	"github.com/ricochet-im/ricochet-go/rpc"
 	"golang.org/x/net/context"
+	"io"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var Ui UI
 
 type UI struct {
 	Input  *readline.Instance
+	Stdout io.Writer
 	Client *Client
 
 	CurrentContact *Contact
+
+	baseConfig     *readline.Config
+	baseChatConfig *readline.Config
 }
 
 func (ui *UI) CommandLoop() {
-	ui.Input.SetPrompt("> ")
+	ui.setupInputConfigs()
+	ui.Input.SetConfig(ui.baseConfig)
+
 	for {
 		line, err := ui.Input.Readline()
 		if err != nil {
@@ -31,6 +39,14 @@ func (ui *UI) CommandLoop() {
 			return
 		}
 	}
+}
+
+func (ui *UI) setupInputConfigs() {
+	ui.baseConfig = ui.Input.Config.Clone()
+	ui.baseConfig.Prompt = "> "
+	ui.baseChatConfig = ui.baseConfig.Clone()
+	ui.baseChatConfig.Prompt = "\x1b[90m%s\x1b[39m | %s \x1b[34m<<\x1b[39m "
+	ui.baseChatConfig.UniqueEditLine = true
 }
 
 func (ui *UI) Execute(line string) error {
@@ -54,7 +70,7 @@ func (ui *UI) Execute(line string) error {
 		if contact != nil {
 			ui.SetCurrentContact(contact)
 		} else {
-			fmt.Printf("no contact %d\n", id)
+			fmt.Fprintf(ui.Stdout, "no contact %d\n", id)
 		}
 		return nil
 	}
@@ -67,36 +83,38 @@ func (ui *UI) Execute(line string) error {
 		return errors.New("Quitting")
 
 	case "status":
-		fmt.Printf("server: %v\n", ui.Client.ServerStatus)
-		fmt.Printf("identity: %v\n", ui.Client.Identity)
+		ui.PrintStatus()
 
 	case "connect":
 		status, err := ui.Client.Backend.StartNetwork(context.Background(), &ricochet.StartNetworkRequest{})
 		if err != nil {
-			fmt.Printf("start network error: %v\n", err)
+			fmt.Fprintf(ui.Stdout, "start network error: %v\n", err)
 		} else {
-			fmt.Printf("network started: %v\n", status)
+			fmt.Fprintf(ui.Stdout, "network started: %v\n", status)
 		}
 
 	case "disconnect":
 		status, err := ui.Client.Backend.StopNetwork(context.Background(), &ricochet.StopNetworkRequest{})
 		if err != nil {
-			fmt.Printf("stop network error: %v\n", err)
+			fmt.Fprintf(ui.Stdout, "stop network error: %v\n", err)
 		} else {
-			fmt.Printf("network stopped: %v\n", status)
+			fmt.Fprintf(ui.Stdout, "network stopped: %v\n", status)
 		}
 
 	case "contacts":
 		ui.ListContacts()
 
 	case "log":
-		fmt.Print(LogBuffer.String())
+		fmt.Fprint(ui.Stdout, LogBuffer.String())
+
+	case "close":
+		ui.SetCurrentContact(nil)
 
 	case "help":
 		fallthrough
 
 	default:
-		fmt.Println("Commands: clear, quit, status, connect, disconnect, contacts, log, help")
+		fmt.Fprintf(ui.Stdout, "Commands: clear, quit, status, connect, disconnect, contacts, log, close, help\n")
 	}
 
 	return nil
@@ -108,30 +126,30 @@ func (ui *UI) PrintStatus() {
 
 	switch controlStatus.Status {
 	case ricochet.TorControlStatus_STOPPED:
-		fmt.Fprintf(ui.Input.Stdout(), "Network is stopped -- type 'connect' to go online\n")
+		fmt.Fprintf(ui.Stdout, "Network is stopped -- type 'connect' to go online\n")
 
 	case ricochet.TorControlStatus_ERROR:
-		fmt.Fprintf(ui.Input.Stdout(), "Network error: %s\n", controlStatus.ErrorMessage)
+		fmt.Fprintf(ui.Stdout, "Network error: %s\n", controlStatus.ErrorMessage)
 
 	case ricochet.TorControlStatus_CONNECTING:
-		fmt.Fprintf(ui.Input.Stdout(), "Network connecting...\n")
+		fmt.Fprintf(ui.Stdout, "Network connecting...\n")
 
 	case ricochet.TorControlStatus_CONNECTED:
 		switch connectionStatus.Status {
 		case ricochet.TorConnectionStatus_UNKNOWN:
 			fallthrough
 		case ricochet.TorConnectionStatus_OFFLINE:
-			fmt.Fprintf(ui.Input.Stdout(), "Network is offline\n")
+			fmt.Fprintf(ui.Stdout, "Network is offline\n")
 
 		case ricochet.TorConnectionStatus_BOOTSTRAPPING:
-			fmt.Fprintf(ui.Input.Stdout(), "Network bootstrapping: %s\n", connectionStatus.BootstrapProgress)
+			fmt.Fprintf(ui.Stdout, "Network bootstrapping: %s\n", connectionStatus.BootstrapProgress)
 
 		case ricochet.TorConnectionStatus_READY:
-			fmt.Fprintf(ui.Input.Stdout(), "Network is online\n")
+			fmt.Fprintf(ui.Stdout, "Network is online\n")
 		}
 	}
 
-	fmt.Fprintf(ui.Input.Stdout(), "Your ricochet ID is %s\n", ui.Client.Identity.Address)
+	fmt.Fprintf(ui.Stdout, "Your ricochet ID is %s\n", ui.Client.Identity.Address)
 
 	// no. contacts, contact reqs, online contacts
 	// unread messages
@@ -149,11 +167,88 @@ func (ui *UI) ListContacts() {
 		if len(contacts) == 0 {
 			continue
 		}
-		fmt.Printf(". %s\n", strings.ToLower(status.String()))
+		fmt.Fprintf(ui.Stdout, ". %s\n", strings.ToLower(status.String()))
 		for _, contact := range contacts {
-			fmt.Printf("... [%d] %s\n", contact.Data.Id, contact.Data.Nickname)
+			fmt.Fprintf(ui.Stdout, "... [%d] %s\n", contact.Data.Id, contact.Data.Nickname)
 		}
 	}
+}
+
+// This type acts as a readline Listener and handles special behavior for
+// the prompt in a conversation. In particular, it swaps temporarily back to
+// the normal prompt for command lines (starting with /), and it keeps the
+// timestamp in the conversation prompt updated.
+type conversationInputConfig struct {
+	Input      *readline.Instance
+	Config     *readline.Config
+	BaseConfig *readline.Config
+	PromptFmt  string
+
+	stopPromptTimer chan struct{}
+}
+
+func (cc *conversationInputConfig) OnChange(line []rune, pos int, key rune) ([]rune, int, bool) {
+	if len(line) == 0 && key != 0 {
+		cc.Input.SetConfig(cc.Config)
+		cc.stopPromptTimer = make(chan struct{})
+		go cc.updatePromptTimer()
+	}
+
+	if len(line) > 0 && line[0] == '/' {
+		if cc.Input.Config == cc.Config {
+			cc.stopPromptTimer <- struct{}{}
+			close(cc.stopPromptTimer)
+			cc.BaseConfig.Listener = cc.Config.Listener
+			cc.Input.SetConfig(cc.BaseConfig)
+		}
+	} else if cc.Input.Config == cc.BaseConfig {
+		line = append([]rune{'/'}, line...)
+	}
+
+	return line, pos, true
+}
+
+func (cc *conversationInputConfig) Install() {
+	cc.Input.SetConfig(cc.Config)
+	cc.stopPromptTimer = make(chan struct{})
+	go cc.updatePromptTimer()
+}
+
+func (cc *conversationInputConfig) Remove() {
+	if cc.Input.Config == cc.Config {
+		cc.stopPromptTimer <- struct{}{}
+		close(cc.stopPromptTimer)
+		cc.Input.SetConfig(cc.BaseConfig)
+	}
+
+	cc.BaseConfig.Listener = nil
+}
+
+func (cc *conversationInputConfig) updatePromptTimer() {
+	for {
+		t := time.Now()
+		cc.Input.SetPrompt(fmt.Sprintf(cc.PromptFmt, t.Format("15:04")))
+		cc.Input.Refresh()
+
+		sec := 61 - t.Second()
+		select {
+		case <-time.After(time.Duration(sec) * time.Second):
+			continue
+		case <-cc.stopPromptTimer:
+			return
+		}
+	}
+}
+
+func (ui *UI) setupConversationPrompt() {
+	listener := &conversationInputConfig{
+		Input:      ui.Input,
+		Config:     ui.baseChatConfig.Clone(),
+		BaseConfig: ui.baseConfig,
+		PromptFmt:  fmt.Sprintf(ui.baseChatConfig.Prompt, "%s", ui.CurrentContact.Data.Nickname),
+	}
+	listener.Config.Listener = listener
+	listener.Install()
 }
 
 func (ui *UI) SetCurrentContact(contact *Contact) {
@@ -163,17 +258,12 @@ func (ui *UI) SetCurrentContact(contact *Contact) {
 
 	ui.CurrentContact = contact
 	if ui.CurrentContact != nil {
-		config := ui.Input.Config.Clone()
-		config.Prompt = fmt.Sprintf("\x1b[90m00:00\x1b[39m | %s \x1b[34m<<\x1b[39m ", contact.Data.Nickname)
-		config.UniqueEditLine = true
-		ui.Input.SetConfig(config)
-		fmt.Printf("--- %s (%s) ---\n", contact.Data.Nickname, strings.ToLower(contact.Data.Status.String()))
+		ui.setupConversationPrompt()
+		fmt.Fprintf(ui.Stdout, "--- %s (%s) ---\n", contact.Data.Nickname, strings.ToLower(contact.Data.Status.String()))
 		contact.Conversation.PrintContext()
 		contact.Conversation.MarkAsRead()
 	} else {
-		config := ui.Input.Config.Clone()
-		config.Prompt = "> "
-		config.UniqueEditLine = false
-		ui.Input.SetConfig(config)
+		ui.Input.Config.Listener.(*conversationInputConfig).Remove()
+		ui.Input.SetConfig(ui.baseConfig)
 	}
 }

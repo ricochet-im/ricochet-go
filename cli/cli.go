@@ -37,6 +37,7 @@ func main() {
 	}
 	Ui = UI{
 		Input:  input,
+		Stdout: input.Stdout(),
 		Client: client,
 	}
 

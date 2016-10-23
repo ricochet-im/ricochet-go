@@ -41,7 +41,7 @@ func (c *Conversation) SendMessage(text string) error {
 		Text: text,
 	})
 	if err != nil {
-		fmt.Printf("send message error: %v\n", err)
+		fmt.Fprintf(Ui.Stdout, "send message error: %v\n", err)
 		return err
 	}
 
@@ -220,7 +220,7 @@ func (c *Conversation) printMessage(msg *ricochet.Message) {
 	}
 
 	// XXX shell escaping
-	fmt.Fprintf(Ui.Input.Stdout(), "%s | %s %s %s\n",
+	fmt.Fprintf(Ui.Stdout, "%s | %s %s %s\n",
 		ts,
 		c.Contact.Data.Nickname,
 		direction,
