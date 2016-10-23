@@ -35,11 +35,10 @@ func main() {
 	client := &Client{
 		Backend: rpc.NewRicochetCoreClient(conn),
 	}
-	ui := &UI{
+	Ui = UI{
 		Input:  input,
 		Client: client,
 	}
-	client.Ui = ui
 
 	fmt.Print("Connecting to backend...\n")
 
@@ -49,9 +48,9 @@ func main() {
 			os.Exit(1)
 		}
 		client.Block()
-		ui.PrintStatus()
+		Ui.PrintStatus()
 		client.Unblock()
 	}()
 
-	ui.CommandLoop()
+	Ui.CommandLoop()
 }

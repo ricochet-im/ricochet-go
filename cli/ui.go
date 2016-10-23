@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+var Ui UI
+
 type UI struct {
 	Input  *readline.Instance
 	Client *Client

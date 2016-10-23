@@ -9,7 +9,6 @@ import (
 
 type Client struct {
 	Backend ricochet.RicochetCoreClient
-	Ui      *UI
 
 	ServerStatus ricochet.ServerStatusReply
 	Identity     ricochet.Identity
@@ -227,8 +226,8 @@ func (c *Client) onContactEvent(event *ricochet.ContactEvent) {
 
 		contact, _ := c.Contacts.Deleted(data)
 
-		if c.Ui.CurrentContact == contact {
-			c.Ui.SetCurrentContact(nil)
+		if Ui.CurrentContact == contact {
+			Ui.SetCurrentContact(nil)
 		}
 
 	default:
