@@ -3,9 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/chzyer/readline"
 	"github.com/ricochet-im/ricochet-go/rpc"
 	"golang.org/x/net/context"
-	"gopkg.in/readline.v1"
 	"strconv"
 	"strings"
 )
@@ -163,17 +163,17 @@ func (ui *UI) SetCurrentContact(contact *Contact) {
 
 	ui.CurrentContact = contact
 	if ui.CurrentContact != nil {
-		config := *ui.Input.Config
+		config := ui.Input.Config.Clone()
 		config.Prompt = fmt.Sprintf("\x1b[90m00:00\x1b[39m | %s \x1b[34m<<\x1b[39m ", contact.Data.Nickname)
 		config.UniqueEditLine = true
-		ui.Input.SetConfig(&config)
+		ui.Input.SetConfig(config)
 		fmt.Printf("--- %s (%s) ---\n", contact.Data.Nickname, strings.ToLower(contact.Data.Status.String()))
 		contact.Conversation.PrintContext()
 		contact.Conversation.MarkAsRead()
 	} else {
-		config := *ui.Input.Config
+		config := ui.Input.Config.Clone()
 		config.Prompt = "> "
 		config.UniqueEditLine = false
-		ui.Input.SetConfig(&config)
+		ui.Input.SetConfig(config)
 	}
 }

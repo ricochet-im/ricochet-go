@@ -48,10 +48,6 @@ func (c *Conversation) SendMessage(text string) error {
 	if err := c.validateMessage(msg); err != nil {
 		log.Printf("Conversation sent message does not validate: %v", err)
 	}
-	c.messages = append(c.messages, msg)
-	c.trimBacklog()
-	c.printMessage(msg)
-
 	return nil
 }
 
@@ -224,7 +220,7 @@ func (c *Conversation) printMessage(msg *ricochet.Message) {
 	}
 
 	// XXX shell escaping
-	fmt.Fprintf(Ui.Input.Stdout(), "\r%s | %s %s %s\n",
+	fmt.Fprintf(Ui.Input.Stdout(), "%s | %s %s %s\n",
 		ts,
 		c.Contact.Data.Nickname,
 		direction,

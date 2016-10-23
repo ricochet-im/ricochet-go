@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/chzyer/readline"
 	rpc "github.com/ricochet-im/ricochet-go/rpc"
 	"google.golang.org/grpc"
-	"gopkg.in/readline.v1"
 	"log"
 	"os"
 )
