@@ -44,7 +44,7 @@ func (ui *UI) Execute(line string) error {
 		if len(words[0]) > 0 && words[0][0] == '/' {
 			words[0] = words[0][1:]
 		} else {
-			ui.SendMessage(line)
+			ui.CurrentContact.Conversation.SendMessage(line)
 			return nil
 		}
 	}
@@ -137,32 +137,6 @@ func (ui *UI) PrintStatus() {
 	// unread messages
 }
 
-func (ui *UI) PrintMessage(contact *Contact, outbound bool, text string) {
-	if contact == ui.CurrentContact {
-		if outbound {
-			fmt.Fprintf(ui.Input.Stdout(), "\r%s > %s\n", contact.Data.Nickname, text)
-		} else {
-			fmt.Fprintf(ui.Input.Stdout(), "\r%s < %s\n", contact.Data.Nickname, text)
-		}
-	} else if !outbound {
-		fmt.Fprintf(ui.Input.Stdout(), "\r---- %s < %s\n", contact.Data.Nickname, text)
-	}
-}
-
-func (ui *UI) SendMessage(text string) {
-	_, err := ui.Client.Backend.SendMessage(context.Background(), &ricochet.Message{
-		Sender: &ricochet.Entity{IsSelf: true},
-		Recipient: &ricochet.Entity{
-			ContactId: ui.CurrentContact.Data.Id,
-			Address:   ui.CurrentContact.Data.Address,
-		},
-		Text: text,
-	})
-	if err != nil {
-		fmt.Printf("send message error: %v\n", err)
-	}
-}
-
 func (ui *UI) ListContacts() {
 	byStatus := make(map[ricochet.Contact_Status][]*Contact)
 	for _, contact := range ui.Client.Contacts.Contacts {
@@ -190,10 +164,12 @@ func (ui *UI) SetCurrentContact(contact *Contact) {
 	ui.CurrentContact = contact
 	if ui.CurrentContact != nil {
 		config := *ui.Input.Config
-		config.Prompt = fmt.Sprintf("%s > ", contact.Data.Nickname)
+		config.Prompt = fmt.Sprintf("\x1b[90m00:00\x1b[39m | %s \x1b[34m<<\x1b[39m ", contact.Data.Nickname)
 		config.UniqueEditLine = true
 		ui.Input.SetConfig(&config)
 		fmt.Printf("--- %s (%s) ---\n", contact.Data.Nickname, strings.ToLower(contact.Data.Status.String()))
+		contact.Conversation.PrintContext()
+		contact.Conversation.MarkAsRead()
 	} else {
 		config := *ui.Input.Config
 		config.Prompt = "> "

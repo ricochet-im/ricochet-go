@@ -7,11 +7,13 @@ import (
 )
 
 type ContactList struct {
+	Client   *Client
 	Contacts map[int32]*Contact
 }
 
-func NewContactList() *ContactList {
+func NewContactList(client *Client) *ContactList {
 	return &ContactList{
+		Client:   client,
 		Contacts: make(map[int32]*Contact),
 	}
 }
@@ -21,7 +23,7 @@ func (cl *ContactList) Populate(data *ricochet.Contact) error {
 		return fmt.Errorf("Duplicate contact ID %d in populate", data.Id)
 	}
 
-	cl.Contacts[data.Id] = initContact(data)
+	cl.Contacts[data.Id] = initContact(cl.Client, data)
 	return nil
 }
 
@@ -30,7 +32,7 @@ func (cl *ContactList) Added(data *ricochet.Contact) (*Contact, error) {
 		return nil, fmt.Errorf("Duplicate contact ID %d in add", data.Id)
 	}
 
-	contact := initContact(data)
+	contact := initContact(cl.Client, data)
 	cl.Contacts[data.Id] = contact
 	return contact, nil
 }
@@ -63,13 +65,19 @@ func (cl *ContactList) ByIdAndAddress(id int32, address string) *Contact {
 }
 
 type Contact struct {
-	Data *ricochet.Contact
+	Data         *ricochet.Contact
+	Conversation *Conversation
 }
 
-func initContact(data *ricochet.Contact) *Contact {
-	return &Contact{
+func initContact(client *Client, data *ricochet.Contact) *Contact {
+	c := &Contact{
 		Data: data,
 	}
+	c.Conversation = &Conversation{
+		Client:  client,
+		Contact: c,
+	}
+	return c
 }
 
 func (c *Contact) Updated(newData *ricochet.Contact) error {

@@ -28,7 +28,7 @@ type Client struct {
 
 // XXX need to handle backend connection loss/reconnection..
 func (c *Client) Initialize() error {
-	c.Contacts = NewContactList()
+	c.Contacts = NewContactList(c)
 	c.monitorsChannel = make(chan interface{}, 10)
 	c.blockChannel = make(chan struct{})
 	c.unblockChannel = make(chan struct{})
@@ -236,6 +236,7 @@ func (c *Client) onContactEvent(event *ricochet.ContactEvent) {
 }
 
 func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
+	// XXX Ignoring updates, errors, etc
 	if event.Type != ricochet.ConversationEvent_RECEIVE &&
 		event.Type != ricochet.ConversationEvent_SEND &&
 		event.Type != ricochet.ConversationEvent_POPULATE {
@@ -268,24 +269,8 @@ func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
 		return
 	}
 
-	if event.Type != ricochet.ConversationEvent_POPULATE {
-		c.Ui.PrintMessage(remoteContact, message.Sender.IsSelf, message.Text)
-	}
-
-	// XXX Shouldn't mark until displayed
-	if !message.Sender.IsSelf {
-		backend := c.Backend
-		message := message
-		go func() {
-			_, err := backend.MarkConversationRead(context.Background(), &ricochet.MarkConversationReadRequest{
-				Entity:             message.Sender,
-				LastRecvIdentifier: message.Identifier,
-			})
-			if err != nil {
-				log.Printf("Mark conversation read failed: %v", err)
-			}
-		}()
-	}
+	remoteContact.Conversation.AddMessage(message,
+		event.Type == ricochet.ConversationEvent_POPULATE)
 }
 
 func (c *Client) NetworkControlStatus() ricochet.TorControlStatus {
