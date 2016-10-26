@@ -282,12 +282,15 @@ func (ui *UI) SetCurrentContact(contact *Contact) {
 		return
 	}
 
+	if ui.CurrentContact != nil {
+		ui.CurrentContact.Conversation.SetActive(false)
+	}
+
 	ui.CurrentContact = contact
 	if ui.CurrentContact != nil {
 		ui.setupConversationPrompt()
 		fmt.Fprintf(ui.Stdout, "------- \x1b[1m%s\x1b[0m is %s -------\n", contact.Data.Nickname, ColoredContactStatus(contact.Data.Status))
-		contact.Conversation.PrintContext()
-		contact.Conversation.MarkAsRead()
+		ui.CurrentContact.Conversation.SetActive(true)
 	} else {
 		ui.Input.Config.Listener.(*conversationInputConfig).Remove()
 		ui.Input.SetConfig(ui.baseConfig)

@@ -28,6 +28,7 @@ type Conversation struct {
 
 	messages  []*ricochet.Message
 	numUnread int
+	active    bool
 }
 
 // Send an outbound message to the contact and add that message into the
@@ -68,11 +69,10 @@ func (c *Conversation) AddMessage(msg *ricochet.Message, populating bool) {
 	}
 	c.trimBacklog()
 	if !populating {
-		// XXX Need to do mark-as-read when displaying received messages in
-		// an active conversation.
-		// XXX Also, need to limit prints to the active conversation.
-		// XXX Quite possibly, more of the active conversation logic belongs here.
 		c.printMessage(msg)
+		if c.active {
+			c.MarkAsReadBefore(msg)
+		}
 	}
 }
 
@@ -239,6 +239,15 @@ func (c *Conversation) validateMessage(msg *ricochet.Message) error {
 }
 
 func (c *Conversation) printMessage(msg *ricochet.Message) {
+	if !c.active {
+		messages := fmt.Sprintf("%d new message", c.numUnread)
+		if c.numUnread > 1 {
+			messages += "s"
+		}
+		fmt.Fprintf(Ui.Stdout, "\r\x1b[31m[[ \x1b[1;34m%s\x1b[0m from \x1b[1m%s\x1b[0m (\x1b[1m%d\x1b[0m) \x1b[31m]]\x1b[39m\n", messages, c.Contact.Data.Nickname, c.Contact.Data.Id)
+		return
+	}
+
 	// XXX actual timestamp
 	ts := "\x1b[90m" + time.Now().Format("15:04") + "\x1b[39m"
 
@@ -255,10 +264,6 @@ func (c *Conversation) printMessage(msg *ricochet.Message) {
 		c.Contact.Data.Nickname,
 		direction,
 		msg.Text)
-
-	/*
-		fmt.Fprintf(ui.Input.Stdout(), "\r\x1b[31m( \x1b[39mNew message from \x1b[31m%s\x1b[39m -- \x1b[1m/%d\x1b[0m to view \x1b[31m)\x1b[39m\n", contact.Data.Nickname, contact.Data.Id)
-	*/
 }
 
 func (c *Conversation) UnreadCount() int {
@@ -271,5 +276,17 @@ func (c *Conversation) recountUnread() {
 		if msg.Status == ricochet.Message_UNREAD {
 			c.numUnread++
 		}
+	}
+}
+
+func (c *Conversation) SetActive(active bool) {
+	if active == c.active {
+		return
+	}
+
+	c.active = active
+	if active {
+		c.PrintContext()
+		c.MarkAsRead()
 	}
 }
