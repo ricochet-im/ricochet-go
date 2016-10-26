@@ -184,24 +184,24 @@ type conversationInputConfig struct {
 	BaseConfig *readline.Config
 	PromptFmt  string
 
+	usingConfig     bool
 	stopPromptTimer chan struct{}
 }
 
 func (cc *conversationInputConfig) OnChange(line []rune, pos int, key rune) ([]rune, int, bool) {
-	if len(line) == 0 && key != 0 {
-		cc.Input.SetConfig(cc.Config)
-		cc.stopPromptTimer = make(chan struct{})
-		go cc.updatePromptTimer()
+	if len(line) == 0 && key != 0 && !cc.usingConfig {
+		cc.Install()
 	}
 
 	if len(line) > 0 && line[0] == '/' {
-		if cc.Input.Config == cc.Config {
+		if cc.usingConfig {
 			cc.stopPromptTimer <- struct{}{}
+			cc.usingConfig = false
 			close(cc.stopPromptTimer)
 			cc.BaseConfig.Listener = cc.Config.Listener
 			cc.Input.SetConfig(cc.BaseConfig)
 		}
-	} else if cc.Input.Config == cc.BaseConfig {
+	} else if !cc.usingConfig {
 		line = append([]rune{'/'}, line...)
 	}
 
@@ -209,19 +209,23 @@ func (cc *conversationInputConfig) OnChange(line []rune, pos int, key rune) ([]r
 }
 
 func (cc *conversationInputConfig) Install() {
-	cc.Input.SetConfig(cc.Config)
-	cc.stopPromptTimer = make(chan struct{})
-	go cc.updatePromptTimer()
+	if !cc.usingConfig {
+		cc.usingConfig = true
+		cc.Input.SetConfig(cc.Config)
+		cc.stopPromptTimer = make(chan struct{})
+		go cc.updatePromptTimer()
+	}
 }
 
 func (cc *conversationInputConfig) Remove() {
-	if cc.Input.Config == cc.Config {
+	cc.BaseConfig.Listener = nil
+
+	if cc.usingConfig {
 		cc.stopPromptTimer <- struct{}{}
+		cc.usingConfig = false
 		close(cc.stopPromptTimer)
 		cc.Input.SetConfig(cc.BaseConfig)
 	}
-
-	cc.BaseConfig.Listener = nil
 }
 
 func (cc *conversationInputConfig) updatePromptTimer() {
