@@ -236,13 +236,6 @@ func (c *Client) onContactEvent(event *ricochet.ContactEvent) {
 }
 
 func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
-	// XXX Ignoring updates, errors, etc
-	if event.Type != ricochet.ConversationEvent_RECEIVE &&
-		event.Type != ricochet.ConversationEvent_SEND &&
-		event.Type != ricochet.ConversationEvent_POPULATE {
-		return
-	}
-
 	message := event.Msg
 
 	if event.Type == ricochet.ConversationEvent_POPULATE && message == nil {
@@ -251,7 +244,8 @@ func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
 		return
 	}
 
-	if message == nil || message.Recipient == nil || message.Sender == nil {
+	if message == nil || message.Recipient == nil || message.Sender == nil ||
+		(message.Sender.IsSelf && message.Recipient.IsSelf) {
 		log.Printf("Ignoring invalid conversation event: %v", event)
 		return
 	}
@@ -269,8 +263,21 @@ func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
 		return
 	}
 
-	remoteContact.Conversation.AddMessage(message,
-		event.Type == ricochet.ConversationEvent_POPULATE)
+	switch event.Type {
+	case ricochet.ConversationEvent_POPULATE:
+		fallthrough
+	case ricochet.ConversationEvent_RECEIVE:
+		fallthrough
+	case ricochet.ConversationEvent_SEND:
+		remoteContact.Conversation.AddMessage(message,
+			event.Type == ricochet.ConversationEvent_POPULATE)
+
+	case ricochet.ConversationEvent_UPDATE:
+		remoteContact.Conversation.UpdateMessage(message)
+
+	default:
+		log.Printf("Ignoring conversation event with unknown type: %v", event)
+	}
 }
 
 func (c *Client) NetworkControlStatus() ricochet.TorControlStatus {

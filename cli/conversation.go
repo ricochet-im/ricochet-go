@@ -26,7 +26,8 @@ type Conversation struct {
 	Client  *Client
 	Contact *Contact
 
-	messages []*ricochet.Message
+	messages  []*ricochet.Message
+	numUnread int
 }
 
 // Send an outbound message to the contact and add that message into the
@@ -62,6 +63,9 @@ func (c *Conversation) AddMessage(msg *ricochet.Message, populating bool) {
 	}
 
 	c.messages = append(c.messages, msg)
+	if msg.Status == ricochet.Message_UNREAD {
+		c.numUnread++
+	}
 	c.trimBacklog()
 	if !populating {
 		// XXX Need to do mark-as-read when displaying received messages in
@@ -70,6 +74,31 @@ func (c *Conversation) AddMessage(msg *ricochet.Message, populating bool) {
 		// XXX Quite possibly, more of the active conversation logic belongs here.
 		c.printMessage(msg)
 	}
+}
+
+func (c *Conversation) UpdateMessage(updatedMsg *ricochet.Message) {
+	if err := c.validateMessage(updatedMsg); err != nil {
+		log.Printf("Rejected conversation message update: %v", err)
+		return
+	}
+
+	for i := len(c.messages) - 1; i >= 0; i-- {
+		msg := c.messages[i]
+		if msg.Sender.IsSelf != updatedMsg.Sender.IsSelf ||
+			msg.Identifier != updatedMsg.Identifier {
+			continue
+		}
+
+		if msg.Status == ricochet.Message_UNREAD &&
+			updatedMsg.Status != ricochet.Message_UNREAD {
+			c.numUnread--
+		}
+
+		c.messages[i] = updatedMsg
+		return
+	}
+
+	log.Printf("Ignoring message update for unknown message: %v", updatedMsg)
 }
 
 // XXX
@@ -141,6 +170,7 @@ func (c *Conversation) PrintContext() {
 func (c *Conversation) trimBacklog() {
 	if len(c.messages) > backlogHardLimit {
 		c.messages = c.messages[len(c.messages)-backlogHardLimit:]
+		c.recountUnread()
 	}
 	if len(c.messages) <= backlogSoftLimit {
 		return
@@ -229,4 +259,17 @@ func (c *Conversation) printMessage(msg *ricochet.Message) {
 	/*
 		fmt.Fprintf(ui.Input.Stdout(), "\r\x1b[31m( \x1b[39mNew message from \x1b[31m%s\x1b[39m -- \x1b[1m/%d\x1b[0m to view \x1b[31m)\x1b[39m\n", contact.Data.Nickname, contact.Data.Id)
 	*/
+}
+
+func (c *Conversation) UnreadCount() int {
+	return c.numUnread
+}
+
+func (c *Conversation) recountUnread() {
+	c.numUnread = 0
+	for _, msg := range c.messages {
+		if msg.Status == ricochet.Message_UNREAD {
+			c.numUnread++
+		}
+	}
 }
