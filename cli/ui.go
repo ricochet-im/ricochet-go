@@ -167,9 +167,14 @@ func (ui *UI) ListContacts() {
 		if len(contacts) == 0 {
 			continue
 		}
-		fmt.Fprintf(ui.Stdout, ". %s\n", strings.ToLower(status.String()))
+		fmt.Fprintf(ui.Stdout, "%s\n", ColoredContactStatus(status))
 		for _, contact := range contacts {
-			fmt.Fprintf(ui.Stdout, "... [%d] %s\n", contact.Data.Id, contact.Data.Nickname)
+			unreadCount := contact.Conversation.UnreadCount()
+			if unreadCount > 0 {
+				fmt.Fprintf(ui.Stdout, "    \x1b[1m%s\x1b[0m (\x1b[1m%d\x1b[0m) -- \x1b[34;1m%d new messages\x1b[0m\n", contact.Data.Nickname, contact.Data.Id, unreadCount)
+			} else {
+				fmt.Fprintf(ui.Stdout, "    %s (\x1b[1m%d\x1b[0m)\n", contact.Data.Nickname, contact.Data.Id)
+			}
 		}
 	}
 }
@@ -255,6 +260,23 @@ func (ui *UI) setupConversationPrompt() {
 	listener.Install()
 }
 
+func ColoredContactStatus(status ricochet.Contact_Status) string {
+	switch status {
+	case ricochet.Contact_UNKNOWN:
+		return "\x1b[31moffline\x1b[39m"
+	case ricochet.Contact_OFFLINE:
+		return "\x1b[31moffline\x1b[39m"
+	case ricochet.Contact_ONLINE:
+		return "\x1b[32monline\x1b[39m"
+	case ricochet.Contact_REQUEST:
+		return "\x1b[33mcontact request\x1b[39m"
+	case ricochet.Contact_REJECTED:
+		return "\x1b[31mrejected\x1b[39m"
+	default:
+		return status.String()
+	}
+}
+
 func (ui *UI) SetCurrentContact(contact *Contact) {
 	if ui.CurrentContact == contact {
 		return
@@ -263,7 +285,7 @@ func (ui *UI) SetCurrentContact(contact *Contact) {
 	ui.CurrentContact = contact
 	if ui.CurrentContact != nil {
 		ui.setupConversationPrompt()
-		fmt.Fprintf(ui.Stdout, "--- %s (%s) ---\n", contact.Data.Nickname, strings.ToLower(contact.Data.Status.String()))
+		fmt.Fprintf(ui.Stdout, "------- \x1b[1m%s\x1b[0m is %s -------\n", contact.Data.Nickname, ColoredContactStatus(contact.Data.Status))
 		contact.Conversation.PrintContext()
 		contact.Conversation.MarkAsRead()
 	} else {

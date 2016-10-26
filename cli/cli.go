@@ -17,7 +17,10 @@ const (
 var LogBuffer bytes.Buffer
 
 func main() {
-	input, err := readline.NewEx(&readline.Config{})
+	input, err := readline.NewEx(&readline.Config{
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
