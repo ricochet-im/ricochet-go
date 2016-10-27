@@ -20,7 +20,7 @@ type Identity struct {
 func (m *Identity) Reset()                    { *m = Identity{} }
 func (m *Identity) String() string            { return proto.CompactTextString(m) }
 func (*Identity) ProtoMessage()               {}
-func (*Identity) Descriptor() ([]byte, []int) { return fileDescriptor4, []int{0} }
+func (*Identity) Descriptor() ([]byte, []int) { return fileDescriptor3, []int{0} }
 
 type IdentityRequest struct {
 }
@@ -28,16 +28,16 @@ type IdentityRequest struct {
 func (m *IdentityRequest) Reset()                    { *m = IdentityRequest{} }
 func (m *IdentityRequest) String() string            { return proto.CompactTextString(m) }
 func (*IdentityRequest) ProtoMessage()               {}
-func (*IdentityRequest) Descriptor() ([]byte, []int) { return fileDescriptor4, []int{1} }
+func (*IdentityRequest) Descriptor() ([]byte, []int) { return fileDescriptor3, []int{1} }
 
 func init() {
 	proto.RegisterType((*Identity)(nil), "ricochet.Identity")
 	proto.RegisterType((*IdentityRequest)(nil), "ricochet.IdentityRequest")
 }
 
-func init() { proto.RegisterFile("identity.proto", fileDescriptor4) }
+func init() { proto.RegisterFile("identity.proto", fileDescriptor3) }
 
-var fileDescriptor4 = []byte{
+var fileDescriptor3 = []byte{
 	// 95 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0xe2, 0xe2, 0xcb, 0x4c, 0x49, 0xcd,
 	0x2b, 0xc9, 0x2c, 0xa9, 0xd4, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0x28, 0xca, 0x4c, 0xce,
