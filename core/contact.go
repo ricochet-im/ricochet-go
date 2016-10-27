@@ -2,9 +2,9 @@ package core
 
 import (
 	"fmt"
-	protocol "github.com/s-rah/go-ricochet"
 	"github.com/ricochet-im/ricochet-go/core/utils"
 	"github.com/ricochet-im/ricochet-go/rpc"
+	protocol "github.com/s-rah/go-ricochet"
 	"golang.org/x/net/context"
 	"log"
 	"strconv"
@@ -15,6 +15,9 @@ import (
 
 // XXX There is generally a lot of duplication and boilerplate between
 // Contact, ConfigContact, and rpc.Contact. This should be reduced somehow.
+
+// XXX Consider replacing the config contact with the protobuf structure,
+// and extending the protobuf structure for everything it needs.
 
 type Contact struct {
 	core *Ricochet
@@ -49,9 +52,20 @@ func ContactFromConfig(core *Ricochet, id int, data ConfigContact, events *utils
 		return nil, fmt.Errorf("Invalid contact hostname '%s", data.Hostname)
 	}
 
-	// XXX Should have some global trigger that starts all contact connections
-	// at the right time
-	go contact.contactConnection()
+	if data.Request.Pending {
+		if data.Request.WhenRejected != "" {
+			contact.status = ricochet.Contact_REJECTED
+		} else {
+			contact.status = ricochet.Contact_REQUEST
+		}
+	}
+
+	// XXX Ugly and fragile way to inhibit connections
+	if contact.status != ricochet.Contact_REJECTED {
+		// XXX Should have some global trigger that starts all contact connections
+		// at the right time
+		go contact.contactConnection()
+	}
 
 	return contact, nil
 }
@@ -108,6 +122,15 @@ func (c *Contact) Data() *ricochet.Contact {
 		WhenCreated:   c.data.WhenCreated,
 		LastConnected: c.data.LastConnected,
 		Status:        c.status,
+	}
+	if c.data.Request.Pending {
+		data.Request = &ricochet.ContactRequest{
+			Direction:    ricochet.ContactRequest_OUTBOUND,
+			Address:      data.Address,
+			Nickname:     data.Nickname,
+			Text:         c.data.Request.Message,
+			FromNickname: c.data.Request.MyNickname,
+		}
 	}
 	return data
 }
@@ -298,10 +321,24 @@ func (c *Contact) setConnection(conn *protocol.OpenConnection) error {
 	// XXX implement this
 
 	c.connection = conn
-	c.status = ricochet.Contact_ONLINE
 	log.Printf("Assigned connection %v to contact %v", c.connection, c)
 
-	// XXX implicit accept contact requests
+	if c.data.Request.Pending {
+		if conn.Client {
+			// XXX Need to check knownContact flag in authentication and implicit accept also
+			// Outbound connection for contact request; send request message
+			// XXX hardcoded channel ID
+			log.Printf("Sending outbound contact request to %v", c)
+			conn.SendContactRequest(5, c.data.Request.MyNickname, c.data.Request.Message)
+		} else {
+			// Inbound connection for contact request; implicitly accept request
+			// and continue as contact
+			log.Printf("Contact request implicitly accepted by incoming connection for contact %v", c)
+			c.requestAccepted()
+		}
+	} else {
+		c.status = ricochet.Contact_ONLINE
+	}
 
 	// Update LastConnected time
 	config := c.core.Config.OpenWrite()
@@ -389,6 +426,20 @@ func (c *Contact) shouldReplaceConnection(conn *protocol.OpenConnection) bool {
 		return false
 	}
 	return false
+}
+
+// Assumes mutex is held, and assumes the caller will send the UPDATE event
+func (c *Contact) requestAccepted() {
+	config := c.core.Config.OpenWrite()
+	c.data.Request = ConfigContactRequest{}
+	config.Contacts[strconv.Itoa(c.id)] = c.data
+	config.Save()
+
+	if c.connection != nil {
+		c.status = ricochet.Contact_ONLINE
+	} else {
+		c.status = ricochet.Contact_UNKNOWN
+	}
 }
 
 // XXX also will go away during protocol API rework

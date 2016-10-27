@@ -7,9 +7,12 @@ import (
 	"github.com/ricochet-im/ricochet-go/rpc"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type ContactList struct {
+	core *Ricochet
+
 	mutex  sync.RWMutex
 	events *utils.Publisher
 
@@ -18,6 +21,7 @@ type ContactList struct {
 
 func LoadContactList(core *Ricochet) (*ContactList, error) {
 	list := &ContactList{
+		core:   core,
 		events: utils.CreatePublisher(),
 	}
 
@@ -76,8 +80,71 @@ func (this *ContactList) ContactByAddress(address string) *Contact {
 	return nil
 }
 
-func (this *ContactList) AddContact(address string, name string) (*Contact, error) {
-	return nil, errors.New("Not implemented")
+func (this *ContactList) AddContactRequest(address, name, fromName, text string) (*Contact, error) {
+	this.mutex.Lock()
+	defer this.mutex.Unlock()
+
+	// XXX check that address is valid before relying on format below
+	// XXX validity checks on name/text also useful
+
+	for _, contact := range this.contacts {
+		if contact.Address() == address {
+			return nil, errors.New("Contact already exists with this address")
+		}
+		if contact.Nickname() == name {
+			return nil, errors.New("Contact already exists with this nickname")
+		}
+	}
+
+	// XXX check inbound requests
+
+	// Write new contact into config
+	config := this.core.Config.OpenWrite()
+
+	maxContactId := 0
+	for idstr, _ := range config.Contacts {
+		if id, err := strconv.Atoi(idstr); err == nil {
+			if maxContactId < id {
+				maxContactId = id
+			}
+		}
+	}
+
+	contactId := maxContactId + 1
+	configContact := ConfigContact{
+		Hostname:    address[9:] + ".onion",
+		Nickname:    name,
+		WhenCreated: time.Now().Format(time.RFC3339),
+		Request: ConfigContactRequest{
+			Pending:    true,
+			MyNickname: fromName,
+			Message:    text,
+		},
+	}
+
+	config.Contacts[strconv.Itoa(contactId)] = configContact
+	if err := config.Save(); err != nil {
+		return nil, err
+	}
+
+	// Create Contact
+	// XXX This starts connection immediately, which could cause contact update
+	// events before the add event in an unlikely race case
+	contact, err := ContactFromConfig(this.core, contactId, configContact, this.events)
+	if err != nil {
+		return nil, err
+	}
+	this.contacts[contactId] = contact
+
+	event := ricochet.ContactEvent{
+		Type: ricochet.ContactEvent_ADD,
+		Subject: &ricochet.ContactEvent_Contact{
+			Contact: contact.Data(),
+		},
+	}
+	this.events.Publish(event)
+
+	return contact, nil
 }
 
 func (this *ContactList) RemoveContact(contact *Contact) error {

@@ -9,6 +9,10 @@ import (
 	"sync"
 )
 
+// XXX This is partially but not fully compatible with Ricochet's JSON
+// configs. It might be better to be explicitly not compatible, but have
+// an automatic import function.
+
 type Config struct {
 	path     string
 	filePath string
@@ -28,15 +32,24 @@ type ConfigRoot struct {
 
 type ConfigContact struct {
 	Hostname      string
-	LastConnected string
+	LastConnected string `json:",omitempty"`
 	Nickname      string
 	WhenCreated   string
+	Request       ConfigContactRequest `json:",omitempty"`
+}
+
+type ConfigContactRequest struct {
+	Pending       bool
+	MyNickname    string
+	Message       string
+	WhenDelivered string `json:",omitempty"`
+	WhenRejected  string `json:",omitempty"`
+	RemoteError   string `json:",omitempty"`
 }
 
 type ConfigIdentity struct {
-	DataDirectory     string
-	HostnameBlacklist []string
-	ServiceKey        string
+	DataDirectory string `json:",omitempty"`
+	ServiceKey    string
 }
 
 func LoadConfig(configPath string) (*Config, error) {

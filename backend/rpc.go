@@ -120,7 +120,17 @@ func (s *RpcServer) MonitorContacts(req *rpc.MonitorContactsRequest, stream rpc.
 }
 
 func (s *RpcServer) AddContactRequest(ctx context.Context, req *rpc.ContactRequest) (*rpc.Contact, error) {
-	return nil, NotImplementedError
+	contactList := s.core.Identity.ContactList()
+	if req.Direction != rpc.ContactRequest_OUTBOUND {
+		return nil, errors.New("Request must be outbound")
+	}
+
+	contact, err := contactList.AddContactRequest(req.Address, req.Nickname, req.FromNickname, req.Text)
+	if err != nil {
+		return nil, err
+	}
+
+	return contact.Data(), nil
 }
 
 func (s *RpcServer) UpdateContact(ctx context.Context, req *rpc.Contact) (*rpc.Contact, error) {
