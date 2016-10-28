@@ -144,6 +144,7 @@ func (this *ContactList) AddContactRequest(address, name, fromName, text string)
 	}
 	this.events.Publish(event)
 
+	contact.StartConnection()
 	return contact, nil
 }
 
@@ -155,9 +156,14 @@ func (this *ContactList) RemoveContact(contact *Contact) error {
 		return errors.New("Not in contact list")
 	}
 
-	// XXX Not persisting in config
-	// XXX This will have to do some things to the contact itself
-	// eventually too, such as killing connections and other resources.
+	contact.StopConnection()
+
+	config := this.core.Config.OpenWrite()
+	delete(config.Contacts, strconv.Itoa(contact.Id()))
+	if err := config.Save(); err != nil {
+		return err
+	}
+
 	delete(this.contacts, contact.Id())
 
 	event := ricochet.ContactEvent{
@@ -172,4 +178,16 @@ func (this *ContactList) RemoveContact(contact *Contact) error {
 	this.events.Publish(event)
 
 	return nil
+}
+
+func (this *ContactList) StartConnections() {
+	for _, contact := range this.Contacts() {
+		contact.StartConnection()
+	}
+}
+
+func (this *ContactList) StopConnections() {
+	for _, contact := range this.Contacts() {
+		contact.StopConnection()
+	}
 }

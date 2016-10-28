@@ -43,6 +43,7 @@ func CreateIdentity(core *Ricochet) (*Identity, error) {
 	}
 	me.contactList = contactList
 
+	contactList.StartConnections()
 	go me.publishService(me.privateKey)
 	return me, nil
 }

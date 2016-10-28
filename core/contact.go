@@ -29,9 +29,11 @@ type Contact struct {
 	mutex  sync.Mutex
 	events *utils.Publisher
 
+	connEnabled       bool
 	connection        *protocol.OpenConnection
 	connChannel       chan *protocol.OpenConnection
 	connClosedChannel chan struct{}
+	connStopped       chan struct{}
 
 	outboundConnAuthKnown bool
 
@@ -40,12 +42,10 @@ type Contact struct {
 
 func ContactFromConfig(core *Ricochet, id int, data ConfigContact, events *utils.Publisher) (*Contact, error) {
 	contact := &Contact{
-		core:              core,
-		id:                id,
-		data:              data,
-		events:            events,
-		connChannel:       make(chan *protocol.OpenConnection),
-		connClosedChannel: make(chan struct{}),
+		core:   core,
+		id:     id,
+		data:   data,
+		events: events,
 	}
 
 	if id < 0 {
@@ -60,13 +60,6 @@ func ContactFromConfig(core *Ricochet, id int, data ConfigContact, events *utils
 		} else {
 			contact.status = ricochet.Contact_REQUEST
 		}
-	}
-
-	// XXX Ugly and fragile way to inhibit connections
-	if contact.status != ricochet.Contact_REJECTED {
-		// XXX Should have some global trigger that starts all contact connections
-		// at the right time
-		go contact.contactConnection()
 	}
 
 	return contact, nil
@@ -157,6 +150,48 @@ func (c *Contact) Connection() *protocol.OpenConnection {
 	return c.connection
 }
 
+func (c *Contact) StartConnection() {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if c.connEnabled {
+		return
+	}
+
+	c.connEnabled = true
+	c.connChannel = make(chan *protocol.OpenConnection)
+	c.connClosedChannel = make(chan struct{})
+	c.connStopped = make(chan struct{})
+	go c.contactConnection()
+}
+
+func (c *Contact) StopConnection() {
+	c.mutex.Lock()
+	if !c.connEnabled {
+		c.mutex.Unlock()
+		return
+	}
+	stopped := c.connStopped
+	close(c.connChannel)
+	c.connChannel = nil
+	c.connClosedChannel = nil
+	c.connStopped = nil
+	c.mutex.Unlock()
+	<-stopped
+}
+
+func (c *Contact) shouldMakeOutboundConnections() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	// Don't make connections to contacts in the REJECTED state
+	if c.status == ricochet.Contact_REJECTED {
+		return false
+	}
+
+	return c.connEnabled
+}
+
 // Goroutine to handle the protocol connection for a contact.
 // Responsible for making outbound connections and taking over authenticated
 // inbound connections, running protocol handlers on the active connection, and
@@ -174,23 +209,28 @@ func (c *Contact) contactConnection() {
 	// to handler for parsing, which could let it go on any goroutine we want, if it's desirable
 	// to put it on e.g. this routine. Hmm.
 
+	connChannel := c.connChannel
+	connClosedChannel := c.connClosedChannel
+	stopped := c.connStopped
+
+connectionLoop:
 	for {
 		// If there is no active connection, spawn an outbound connector.
 		// A successful connection is returned via connChannel; otherwise, it will keep trying.
 		var outboundCtx context.Context
 		outboundCancel := func() {}
-		if c.connection == nil {
+		if c.connection == nil && c.shouldMakeOutboundConnections() {
 			outboundCtx, outboundCancel = context.WithCancel(context.Background())
-			go c.connectOutbound(outboundCtx, c.connChannel)
+			go c.connectOutbound(outboundCtx, connChannel)
 		}
 
 		select {
-		case conn, ok := <-c.connChannel:
+		case conn, ok := <-connChannel:
 			outboundCancel()
 			if !ok {
 				// Closing connChannel exits this connection routine, for contact
 				// deletion, exit, or some other case.
-				break
+				break connectionLoop
 			} else if conn == nil {
 				// Signal used to restart outbound connection attempts
 				continue
@@ -210,7 +250,7 @@ func (c *Contact) contactConnection() {
 				continue
 			}
 
-		case <-c.connClosedChannel:
+		case <-connClosedChannel:
 			outboundCancel()
 			c.clearConnection(nil)
 		}
@@ -218,6 +258,7 @@ func (c *Contact) contactConnection() {
 
 	log.Printf("Exiting contact connection loop for %s", c.Address())
 	c.clearConnection(nil)
+	close(stopped)
 }
 
 // Attempt an outbound connection to the contact, retrying automatically using OnionConnector.
@@ -499,20 +540,27 @@ func (c *Contact) updateContactRequest(status string) bool {
 
 // XXX also will go away during protocol API rework
 func (c *Contact) OnConnectionAuthenticated(conn *protocol.OpenConnection, knownContact bool) {
+	c.mutex.Lock()
+	if c.connChannel == nil {
+		log.Printf("Inbound connection from contact, but connections are not enabled for contact %v", c)
+		c.mutex.Unlock()
+		conn.Close()
+	}
 	// XXX this is ugly
 	if conn.Client {
 		c.outboundConnAuthKnown = knownContact
 	}
 	c.connChannel <- conn
+	c.mutex.Unlock()
 }
 
 // XXX rework connection close to have a proper notification instead of this "find contact" mess.
 func (c *Contact) OnConnectionClosed(conn *protocol.OpenConnection) {
 	c.mutex.Lock()
-	if c.connection != conn {
+	if c.connection != conn || c.connClosedChannel == nil {
 		c.mutex.Unlock()
 		return
 	}
-	c.mutex.Unlock()
 	c.connClosedChannel <- struct{}{}
+	c.mutex.Unlock()
 }
