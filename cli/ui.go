@@ -250,6 +250,10 @@ func (cc *conversationInputConfig) updatePromptTimer() {
 }
 
 func (ui *UI) setupConversationPrompt() {
+	if ui.Input.Config.Listener != nil {
+		ui.Input.Config.Listener.(*conversationInputConfig).Remove()
+	}
+
 	listener := &conversationInputConfig{
 		Input:      ui.Input,
 		Config:     ui.baseChatConfig.Clone(),
