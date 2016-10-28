@@ -54,7 +54,7 @@ func (ui *UI) Execute(line string) error {
 	ui.Client.Block()
 	defer ui.Client.Unblock()
 
-	words := strings.SplitN(line, " ", 1)
+	words := strings.SplitN(line, " ", 2)
 
 	if ui.CurrentContact != nil {
 		if len(words[0]) > 0 && words[0][0] == '/' {
@@ -104,6 +104,12 @@ func (ui *UI) Execute(line string) error {
 	case "contacts":
 		ui.ListContacts()
 
+	case "add-contact":
+		ui.AddContact(words[1:])
+
+	case "delete-contact":
+		ui.DeleteContact(words[1:])
+
 	case "log":
 		fmt.Fprint(ui.Stdout, LogBuffer.String())
 
@@ -114,7 +120,7 @@ func (ui *UI) Execute(line string) error {
 		fallthrough
 
 	default:
-		fmt.Fprintf(ui.Stdout, "Commands: clear, quit, status, connect, disconnect, contacts, log, close, help\n")
+		fmt.Fprintf(ui.Stdout, "Commands: clear, quit, status, connect, disconnect, contacts, add-contact, delete-contact, log, close, help\n")
 	}
 
 	return nil
@@ -177,6 +183,91 @@ func (ui *UI) ListContacts() {
 			}
 		}
 	}
+}
+
+func (ui *UI) AddContact(params []string) {
+	var address string
+
+	if len(params) > 0 {
+		address = params[0]
+	} else {
+		str, err := readline.Line("Contact address: ")
+		if err != nil {
+			return
+		}
+		address = str
+	}
+
+	// XXX validate address
+
+	nickname, err := readline.Line("Nickname: ")
+	if err != nil {
+		return
+	}
+	fromNickname, err := readline.Line("From (your nickname): ")
+	if err != nil {
+		return
+	}
+	message, err := readline.Line("Message: ")
+	if err != nil {
+		return
+	}
+
+	contact, err := ui.Client.Backend.AddContactRequest(context.Background(),
+		&ricochet.ContactRequest{
+			Direction:    ricochet.ContactRequest_OUTBOUND,
+			Address:      address,
+			Nickname:     nickname,
+			Text:         message,
+			FromNickname: fromNickname,
+		})
+
+	if err != nil {
+		fmt.Fprintf(ui.Stdout, "Failed: %s\n", err)
+		return
+	}
+
+	fmt.Fprintf(ui.Stdout, "Added contact \x1b[1m%s\x1b[0m (\x1b[1m%d\x1b[0m)\n", contact.Nickname, contact.Id)
+}
+
+func (ui *UI) DeleteContact(params []string) {
+	if len(params) < 1 {
+		fmt.Fprintf(ui.Stdout, "Usage: delete-contact [id]\n")
+		return
+	}
+	id, err := strconv.Atoi(params[0])
+	if err != nil {
+		fmt.Fprintf(ui.Stdout, "Invalid contact id '%s'\n", params[0])
+		return
+	}
+	contact := ui.Client.Contacts.ById(int32(id))
+	if contact == nil {
+		fmt.Fprintf(ui.Stdout, "No contact with id %d\n", id)
+		return
+	}
+
+	fmt.Fprintf(ui.Stdout, "\nThis contact will be \x1b[31mdeleted\x1b[0m:\n\n")
+	fmt.Fprintf(ui.Stdout, "    Address:\t%s\n", contact.Data.Address)
+	fmt.Fprintf(ui.Stdout, "    Name:\t%s\n", contact.Data.Nickname)
+	fmt.Fprintf(ui.Stdout, "    Online:\t%s\n", contact.Data.LastConnected)
+	fmt.Fprintf(ui.Stdout, "    Created:\t%s\n\n", contact.Data.WhenCreated)
+	confirm, err := readline.Line("Type YES to confirm: ")
+	if err != nil || confirm != "YES" {
+		fmt.Fprintf(ui.Stdout, "Aborted\n")
+		return
+	}
+
+	_, err = ui.Client.Backend.DeleteContact(context.Background(),
+		&ricochet.DeleteContactRequest{
+			Id:      contact.Data.Id,
+			Address: contact.Data.Address,
+		})
+	if err != nil {
+		fmt.Fprintf(ui.Stdout, "Failed: %s\n", err)
+		return
+	}
+
+	fmt.Fprintf(ui.Stdout, "Contact deleted\n")
 }
 
 // This type acts as a readline Listener and handles special behavior for
