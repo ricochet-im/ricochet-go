@@ -48,9 +48,15 @@ type Network struct {
 }
 
 type OnionService struct {
+	Network    *Network
 	OnionID    string
 	Ports      []bulb.OnionPortSpec
 	PrivateKey crypto.PrivateKey
+}
+
+type OnionServiceListener struct {
+	Service          *OnionService
+	InternalListener net.Listener
 }
 
 func CreateNetwork() *Network {
@@ -326,6 +332,7 @@ func (n *Network) AddOnionPorts(ports []bulb.OnionPortSpec, key crypto.PrivateKe
 	}
 
 	service := &OnionService{
+		Network:    n,
 		OnionID:    info.OnionID,
 		Ports:      ports,
 		PrivateKey: info.PrivateKey,
@@ -346,7 +353,8 @@ func (n *Network) AddOnionPorts(ports []bulb.OnionPortSpec, key crypto.PrivateKe
 // function behaves identically to AddOnionPorts, other than creating a
 // listener automatically.
 func (n *Network) NewOnionListener(onionPort uint16, key crypto.PrivateKey) (*OnionService, net.Listener, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// XXX prefer unix
+	internalListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -354,17 +362,65 @@ func (n *Network) NewOnionListener(onionPort uint16, key crypto.PrivateKey) (*On
 	onionPorts := []bulb.OnionPortSpec{
 		bulb.OnionPortSpec{
 			VirtPort: onionPort,
-			Target:   listener.Addr().String(),
+			Target:   internalListener.Addr().String(),
 		},
 	}
 
 	service, err := n.AddOnionPorts(onionPorts, key)
 	if err != nil {
-		listener.Close()
+		internalListener.Close()
 		return nil, nil, err
 	}
 
+	listener := &OnionServiceListener{
+		Service:          service,
+		InternalListener: internalListener,
+	}
+
 	return service, listener, nil
+}
+
+func (n *Network) DeleteOnionService(onionID string) error {
+	n.controlMutex.Lock()
+	for i, onion := range n.onions {
+		if onion.OnionID == onionID {
+			n.onions = append(n.onions[:i], n.onions[i+1:]...)
+			break
+		}
+	}
+	conn := n.conn
+	n.controlMutex.Unlock()
+
+	if conn != nil {
+		return conn.DeleteOnion(onionID)
+	}
+
+	return nil
+}
+
+func (s *OnionServiceListener) Accept() (net.Conn, error) {
+	return s.InternalListener.Accept()
+}
+
+func (s *OnionServiceListener) Close() error {
+	s.Service.Network.DeleteOnionService(s.Service.OnionID)
+	return s.InternalListener.Close()
+}
+
+type OnionAddr struct {
+	OnionHostname string
+}
+
+func (a OnionAddr) Network() string {
+	return "onion"
+}
+
+func (a OnionAddr) String() string {
+	return a.OnionHostname
+}
+
+func (s *OnionServiceListener) Addr() net.Addr {
+	return OnionAddr{OnionHostname: s.Service.OnionID + ".onion"}
 }
 
 func (n *Network) run(connectChannel chan<- error) {
