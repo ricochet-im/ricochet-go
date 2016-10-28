@@ -33,6 +33,8 @@ type Contact struct {
 	connChannel       chan *protocol.OpenConnection
 	connClosedChannel chan struct{}
 
+	outboundConnAuthKnown bool
+
 	conversation *Conversation
 }
 
@@ -247,10 +249,9 @@ func (c *Contact) connectOutbound(ctx context.Context, connChannel chan *protoco
 		oc, err := protocol.Open(conn, hostname[0:16])
 		if err != nil {
 			log.Printf("Contact connection protocol failure: %s", err)
-			oc.Close()
-			// XXX These failures are probably not worth retrying so much,
-			// but that would need to be investigated. For now, just do the
-			// same backoff behavior.
+			if oc != nil {
+				oc.Close()
+			}
 			if err := connector.Backoff(ctx); err != nil {
 				return
 			}
@@ -303,6 +304,14 @@ func (c *Contact) setConnection(conn *protocol.OpenConnection) error {
 		return fmt.Errorf("Connection hostname %s doesn't match contact hostname %s when assigning connection", conn.OtherHostname, c.data.Hostname[0:16])
 	}
 
+	if conn.Client && !c.outboundConnAuthKnown && !c.data.Request.Pending {
+		log.Printf("Outbound connection to contact says we are not a known contact for %v", c)
+		// XXX Should move to rejected status, stop attempting connections.
+		c.mutex.Unlock()
+		conn.Close()
+		return fmt.Errorf("Outbound connection says we are not a known contact")
+	}
+
 	if c.connection != nil {
 		if c.shouldReplaceConnection(conn) {
 			// XXX Signal state change for connection loss?
@@ -324,17 +333,17 @@ func (c *Contact) setConnection(conn *protocol.OpenConnection) error {
 	log.Printf("Assigned connection %v to contact %v", c.connection, c)
 
 	if c.data.Request.Pending {
-		if conn.Client {
-			// XXX Need to check knownContact flag in authentication and implicit accept also
+		if conn.Client && !c.outboundConnAuthKnown {
 			// Outbound connection for contact request; send request message
 			// XXX hardcoded channel ID
 			log.Printf("Sending outbound contact request to %v", c)
 			conn.SendContactRequest(5, c.data.Request.MyNickname, c.data.Request.Message)
 		} else {
-			// Inbound connection for contact request; implicitly accept request
-			// and continue as contact
-			log.Printf("Contact request implicitly accepted by incoming connection for contact %v", c)
-			c.requestAccepted()
+			// Inbound connection or outbound connection with a positive
+			// 'isKnownContact' response implicitly accepts the contact request
+			// and can continue as a contact
+			log.Printf("Contact request implicitly accepted by contact %v", c)
+			c.updateContactRequest("Accepted")
 		}
 	} else {
 		c.status = ricochet.Contact_ONLINE
@@ -428,22 +437,72 @@ func (c *Contact) shouldReplaceConnection(conn *protocol.OpenConnection) bool {
 	return false
 }
 
-// Assumes mutex is held, and assumes the caller will send the UPDATE event
-func (c *Contact) requestAccepted() {
+// Update the status of a contact request from a protocol event. Returns
+// true if the contact request channel should remain open.
+func (c *Contact) UpdateContactRequest(status string) bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if !c.data.Request.Pending {
+		return false
+	}
+
+	re := c.updateContactRequest(status)
+
+	event := ricochet.ContactEvent{
+		Type: ricochet.ContactEvent_UPDATE,
+		Subject: &ricochet.ContactEvent_Contact{
+			Contact: c.Data(),
+		},
+	}
+	c.events.Publish(event)
+
+	return re
+}
+
+// Same as above, but assumes the mutex is already held and that the caller
+// will send an UPDATE event
+func (c *Contact) updateContactRequest(status string) bool {
 	config := c.core.Config.OpenWrite()
-	c.data.Request = ConfigContactRequest{}
+	now := time.Now().Format(time.RFC3339)
+	// Whether to keep the channel open
+	var re bool
+
+	switch status {
+	case "Pending":
+		c.data.Request.WhenDelivered = now
+		re = true
+
+	case "Accepted":
+		c.data.Request = ConfigContactRequest{}
+		if c.connection != nil {
+			c.status = ricochet.Contact_ONLINE
+		} else {
+			c.status = ricochet.Contact_UNKNOWN
+		}
+
+	case "Rejected":
+		c.data.Request.WhenRejected = now
+
+	case "Error":
+		c.data.Request.WhenRejected = now
+		c.data.Request.RemoteError = "error occurred"
+
+	default:
+		log.Printf("Unknown contact request status '%s'", status)
+	}
+
 	config.Contacts[strconv.Itoa(c.id)] = c.data
 	config.Save()
-
-	if c.connection != nil {
-		c.status = ricochet.Contact_ONLINE
-	} else {
-		c.status = ricochet.Contact_UNKNOWN
-	}
+	return re
 }
 
 // XXX also will go away during protocol API rework
-func (c *Contact) OnConnectionAuthenticated(conn *protocol.OpenConnection) {
+func (c *Contact) OnConnectionAuthenticated(conn *protocol.OpenConnection, knownContact bool) {
+	// XXX this is ugly
+	if conn.Client {
+		c.outboundConnAuthKnown = knownContact
+	}
 	c.connChannel <- conn
 }
 

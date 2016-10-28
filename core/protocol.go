@@ -73,7 +73,7 @@ func (pc *ProtocolConnection) OnAuthenticationProof(channelID int32, publicKey [
 
 	log.Printf("protocol: OnAuthenticationProof, result: %v, contact: %v", result, pc.Contact)
 	if result && pc.Contact != nil {
-		pc.Contact.OnConnectionAuthenticated(pc.Conn)
+		pc.Contact.OnConnectionAuthenticated(pc.Conn, true)
 	}
 }
 
@@ -87,16 +87,9 @@ func (pc *ProtocolConnection) OnAuthenticationResult(channelID int32, result boo
 		return
 	}
 
-	// XXX Contact request, removed cases
-	if !isKnownContact {
-		log.Printf("protocol: Outbound connection authentication to %s succeeded, but we are not a known contact", pc.Conn.OtherHostname)
-		pc.Conn.Close()
-		return
-	}
-
 	log.Printf("protocol: Outbound connection to %s authenticated", pc.Conn.OtherHostname)
 	if pc.Contact != nil {
-		pc.Contact.OnConnectionAuthenticated(pc.Conn)
+		pc.Contact.OnConnectionAuthenticated(pc.Conn, isKnownContact)
 	}
 }
 
@@ -105,6 +98,15 @@ func (pc *ProtocolConnection) OnContactRequest(channelID int32, nick string, mes
 }
 
 func (pc *ProtocolConnection) OnContactRequestAck(channelID int32, status string) {
+	if !pc.Conn.Client || pc.Contact == nil {
+		pc.Conn.CloseChannel(channelID)
+		return
+	}
+
+	if !pc.Contact.UpdateContactRequest(status) {
+		pc.Conn.CloseChannel(channelID)
+		return
+	}
 }
 
 // Managing Channels
