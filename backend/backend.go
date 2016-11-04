@@ -28,8 +28,8 @@ func main() {
 		log.Fatalf("init error: %v", err)
 	}
 
-	server := &RpcServer{
-		core: core,
+	server := &ricochet.RpcServer{
+		Core: core,
 	}
 	grpcServer := grpc.NewServer()
 	rpc.RegisterRicochetCoreServer(grpcServer, server)
