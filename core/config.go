@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
 	"sync"
 )
 
@@ -14,7 +13,6 @@ import (
 // an automatic import function.
 
 type Config struct {
-	path     string
 	filePath string
 
 	root  ConfigRoot
@@ -52,10 +50,9 @@ type ConfigIdentity struct {
 	ServiceKey    string
 }
 
-func LoadConfig(configPath string) (*Config, error) {
+func LoadConfig(filePath string) (*Config, error) {
 	config := &Config{
-		path:     configPath,
-		filePath: filepath.Join(configPath, "ricochet.json"),
+		filePath: filePath,
 	}
 
 	data, err := ioutil.ReadFile(config.filePath)
@@ -69,7 +66,6 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, err
 	}
 
-	log.Printf("Config: %v", config.root)
 	return config, nil
 }
 
