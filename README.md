@@ -30,6 +30,4 @@ Architecture
 
 **rpc** defines a [gRPC](http://www.grpc.io/) and [protobuf](https://developers.google.com/protocol-buffers/) API for communication between the client backend and frontend. This API is for trusted backends to communicate with frontend UI clients, and it's expected that both will usually be on the same machine and invisible to the end-user. Anything capable of speaking gRPC could implement a frontend.
 
-**backend** is the backend application, providing the gRPC server and using the core implementation.
-
-**cli** is the first frontend, a Go readline-style text-only client.
+**ricochet-cli** is a commandline program that acts as a backend and a readline-style CLI frontend. It can be used as a standalone client, to run a headless backend, or to attach to a running backend.

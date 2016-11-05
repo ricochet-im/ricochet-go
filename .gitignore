@@ -1,3 +1,2 @@
-cli/cli
-backend/backend
-*.json
+ricochet-cli/ricochet-cli
+*.ricochet
