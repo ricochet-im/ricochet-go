@@ -19,14 +19,78 @@ var (
 	LogBuffer bytes.Buffer
 
 	// Flags
-	backendAddress string
+	backendConnect string
+	backendServer  string
 	unsafeBackend  bool
+	backendMode    bool
+	configPath     string = "identity.ricochet"
 )
 
 func main() {
-	flag.StringVar(&backendAddress, "backend", "", "Connect to the client backend running on `address`")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage:\n")
+		fmt.Fprintf(os.Stderr, "  %s [<args>] [<identity>]\n\tStandalone client using <identity> (default \"./identity.ricochet\")\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -listen <address> [<args>] [<identity>]\n\tListen on <address> for Ricochet client frontend connections\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -attach <address> [<args>]\n\tAttach to a client backend running on <address>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\nArgs:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\n")
+	}
+	flag.StringVar(&configPath, "identity", configPath, "Load identity from `<file>`")
+	flag.StringVar(&backendConnect, "attach", "", "Attach to the client backend running on `<address>`")
+	flag.StringVar(&backendServer, "listen", "", "Listen on `<address>` for client frontend connections")
 	flag.BoolVar(&unsafeBackend, "allow-unsafe-backend", false, "Allow a remote backend address. This is NOT RECOMMENDED and may harm your security or privacy. Do not use without a secure, trusted link")
+	flag.BoolVar(&backendMode, "only-backend", false, "Run backend without any commandline UI")
 	flag.Parse()
+	if len(flag.Args()) > 1 {
+		flag.Usage()
+		os.Exit(1)
+	} else if len(flag.Args()) == 1 {
+		configPath = flag.Arg(0)
+	}
+
+	// Check for flag combinations that make no sense
+	if backendConnect != "" {
+		if backendMode {
+			fmt.Printf("Cannot use -only-backend with -attach, because attach implies not running a backend\n")
+			os.Exit(1)
+		} else if backendServer != "" {
+			fmt.Printf("Cannot use -listen with -attach, because attach implies not running a backend\n")
+			os.Exit(1)
+		} else if configPath != "identity.ricochet" {
+			fmt.Printf("Cannot use -identity with -attach, because identity is stored at the backend\n")
+			os.Exit(1)
+		}
+	}
+
+	// Redirect log before starting backend, unless in backend mode
+	if !backendMode {
+		log.SetOutput(&LogBuffer)
+	}
+
+	// Unless backendConnect is set, start the in-process backend
+	if backendConnect == "" {
+		err := startBackend()
+		if err != nil {
+			fmt.Printf("backend failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		if backendMode {
+			// Block forever; backend uses os.Exit on failure
+			c := make(chan struct{})
+			<-c
+			os.Exit(0)
+		}
+	}
+
+	// Connect to RPC backend
+	conn, err := connectClientBackend()
+	if err != nil {
+		fmt.Printf("backend connection failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
 
 	// Set up readline
 	input, err := readline.NewEx(&readline.Config{
@@ -38,15 +102,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer input.Close()
-	log.SetOutput(&LogBuffer)
-
-	// Connect to RPC backend, start in-process backend if necessary
-	conn, err := connectClientBackend()
-	if err != nil {
-		fmt.Printf("backend failed: %v\n", err)
-		os.Exit(1)
-	}
-	defer conn.Close()
 
 	// Configure client and UI
 	client := &Client{
@@ -74,49 +129,70 @@ func main() {
 }
 
 func connectClientBackend() (*grpc.ClientConn, error) {
-	if backendAddress == "" {
-		// In-process backend, using 'InnerNet' as a fake socket
-		address, err := startLocalBackend()
-		if err != nil {
+	address := backendConnect
+	if address == "" {
+		// If not explicitly specified, use the listen address. If that is also empty, default to in-process
+		address = backendServer
+		if address == "" {
+			// In-process backend, using 'InnerNet' as a fake socket
+			return grpc.Dial("ricochet.rpc", grpc.WithInsecure(), grpc.WithDialer(DialInnerNet))
+		}
+	}
+
+	// External backend
+	if strings.HasPrefix(address, "unix:") {
+		return grpc.Dial(address[5:], grpc.WithInsecure(),
+			grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
+				return net.DialTimeout("unix", addr, timeout)
+			}))
+	} else {
+		if err := checkBackendAddressSafety(address); err != nil {
 			return nil, err
 		}
-		return grpc.Dial(address, grpc.WithInsecure(), grpc.WithDialer(DialInnerNet))
-	} else {
-		// External backend
-		if strings.HasPrefix(backendAddress, "unix:") {
-			return grpc.Dial(backendAddress[5:], grpc.WithInsecure(),
-				grpc.WithDialer(func(address string, timeout time.Duration) (net.Conn, error) {
-					return net.DialTimeout("unix", address, timeout)
-				}))
-		} else {
-			host, _, err := net.SplitHostPort(backendAddress)
-			if err != nil {
-				return nil, err
-			}
-			ip := net.ParseIP(host)
-			if !unsafeBackend && (ip == nil || !ip.IsLoopback()) {
-				return nil, fmt.Errorf("Host '%s' is not a loopback address.\nRead the warnings and use -allow-unsafe-backend for non-local addresses", host)
-			}
-
-			return grpc.Dial(backendAddress, grpc.WithInsecure())
-		}
+		return grpc.Dial(address, grpc.WithInsecure())
 	}
 }
 
-func startLocalBackend() (string, error) {
-	config, err := ricochet.LoadConfig(".")
+func checkBackendAddressSafety(address string) error {
+	host, _, err := net.SplitHostPort(address)
 	if err != nil {
-		return "", err
+		return err
+	}
+	ip := net.ParseIP(host)
+	if !unsafeBackend && (ip == nil || !ip.IsLoopback()) {
+		return fmt.Errorf("Host '%s' is not a loopback address.\nRead the warnings and use -allow-unsafe-backend for non-local addresses", host)
+	}
+	return nil
+}
+
+func startBackend() error {
+	config, err := ricochet.LoadConfig(configPath)
+	if err != nil {
+		return err
 	}
 
 	core := new(ricochet.Ricochet)
 	if err := core.Init(config); err != nil {
-		return "", err
+		return err
 	}
 
-	listener, err := ListenInnerNet("ricochet.rpc")
+	var listener net.Listener
+	if backendServer == "" {
+		// In-process backend, using 'InnerNet' as a fake socket
+		listener, err = ListenInnerNet("ricochet.rpc")
+	} else {
+		if strings.HasPrefix(backendServer, "unix:") {
+			// XXX Need the right behavior for cleaning up old sockets, permissions, etc
+			listener, err = net.Listen("unix", backendServer[5:])
+		} else {
+			if err := checkBackendAddressSafety(backendServer); err != nil {
+				return err
+			}
+			listener, err = net.Listen("tcp", backendServer)
+		}
+	}
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	server := &ricochet.RpcServer{
@@ -133,5 +209,5 @@ func startLocalBackend() (string, error) {
 		}
 	}()
 
-	return "ricochet.rpc", nil
+	return nil
 }
