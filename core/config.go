@@ -74,10 +74,10 @@ func LoadConfig(filePath string) (*Config, error) {
 // This function may block.
 func (c *Config) OpenRead() *ConfigRoot {
 	c.mutex.RLock()
-	root := c.root
+	root := c.root.Clone()
 	root.writable = false
 	root.config = c
-	return &root
+	return root
 }
 
 // Return a writable snapshot of the current configuration. This object
@@ -85,10 +85,19 @@ func (c *Config) OpenRead() *ConfigRoot {
 // finished with it. This function may block.
 func (c *Config) OpenWrite() *ConfigRoot {
 	c.mutex.Lock()
-	root := c.root
+	root := c.root.Clone()
 	root.writable = true
 	root.config = c
-	return &root
+	return root
+}
+
+func (root *ConfigRoot) Clone() *ConfigRoot {
+	re := *root
+	re.Contacts = make(map[string]ConfigContact)
+	for k, v := range root.Contacts {
+		re.Contacts[k] = v
+	}
+	return &re
 }
 
 func (root *ConfigRoot) Close() {
@@ -102,9 +111,8 @@ func (root *ConfigRoot) Close() {
 	root.config = nil
 }
 
-// Save saves the state to the Config object, and attempts to write to
-// disk. An error is returned if the write fails, but changes to the
-// object are not discarded on error. XXX This is bad API
+// Save writes the state to disk, and updates the Config object if
+// successful. Changes to the object are discarded on error.
 func (root *ConfigRoot) Save() error {
 	if !root.writable {
 		log.Panic("Save called on read-only config object")
@@ -115,15 +123,13 @@ func (root *ConfigRoot) Save() error {
 	c := root.config
 	root.writable = false
 	root.config = nil
-	c.root = *root
-	err := c.save()
+	err := c.save(root)
 	c.mutex.Unlock()
 	return err
 }
 
-// Discard cannot be relied on to restore the state exactly as it was,
-// because of potentially shared slice or map objects, but does not do
-// an immediate save to disk. XXX This is bad API
+// Discard closes a config write without saving any changes to disk
+// or to the Config object.
 func (root *ConfigRoot) Discard() {
 	if !root.writable {
 		log.Panic("Discard called on read-only config object")
@@ -136,8 +142,8 @@ func (root *ConfigRoot) Discard() {
 	c.mutex.Unlock()
 }
 
-func (c *Config) save() error {
-	data, err := json.MarshalIndent(c.root, "", "  ")
+func (c *Config) save(newRoot *ConfigRoot) error {
+	data, err := json.MarshalIndent(newRoot, "", "  ")
 	if err != nil {
 		log.Printf("Config encoding error: %v", err)
 		return err
@@ -166,5 +172,6 @@ func (c *Config) save() error {
 		return err
 	}
 
+	c.root = *newRoot
 	return nil
 }
