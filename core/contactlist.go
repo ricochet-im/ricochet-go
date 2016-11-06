@@ -128,8 +128,6 @@ func (this *ContactList) AddContactRequest(address, name, fromName, text string)
 	}
 
 	// Create Contact
-	// XXX This starts connection immediately, which could cause contact update
-	// events before the add event in an unlikely race case
 	contact, err := ContactFromConfig(this.core, contactId, configContact, this.events)
 	if err != nil {
 		return nil, err

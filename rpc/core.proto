@@ -29,7 +29,6 @@ service RicochetCore {
     // XXX Protobuf supports maps now. That could also be useful for contact
     // update and such...
 
-    // XXX Service status
     rpc GetIdentity (IdentityRequest) returns (Identity);
 
     // Query contacts and monitor for contact changes. The full contact list
