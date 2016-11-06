@@ -81,10 +81,13 @@ func (this *ContactList) ContactByAddress(address string) *Contact {
 }
 
 func (this *ContactList) AddContactRequest(address, name, fromName, text string) (*Contact, error) {
+	if !IsAddressValid(address) {
+		return nil, errors.New("Invalid ricochet address")
+	}
+
 	this.mutex.Lock()
 	defer this.mutex.Unlock()
 
-	// XXX check that address is valid before relying on format below
 	// XXX validity checks on name/text also useful
 
 	for _, contact := range this.contacts {
@@ -111,8 +114,9 @@ func (this *ContactList) AddContactRequest(address, name, fromName, text string)
 	}
 
 	contactId := maxContactId + 1
+	onion, _ := OnionFromAddress(address)
 	configContact := ConfigContact{
-		Hostname:    address[9:] + ".onion",
+		Hostname:    onion,
 		Nickname:    name,
 		WhenCreated: time.Now().Format(time.RFC3339),
 		Request: ConfigContactRequest{

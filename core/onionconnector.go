@@ -5,7 +5,6 @@ import (
 	"golang.org/x/net/context"
 	"log"
 	"net"
-	"strings"
 	"time"
 )
 
@@ -38,7 +37,7 @@ func (oc *OnionConnector) Connect(address string, c context.Context) (net.Conn, 
 	}
 
 	host, _, err := net.SplitHostPort(address)
-	if err != nil || !strings.HasSuffix(host, ".onion") {
+	if err != nil || !IsOnionValid(host) {
 		return nil, errors.New("Invalid address")
 	}
 

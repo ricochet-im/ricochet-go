@@ -62,7 +62,7 @@ func (me *Identity) loadIdentity() error {
 		if err != nil {
 			return err
 		}
-		me.address, err = utils.RicochetAddressFromKey(&me.privateKey.PublicKey)
+		me.address, err = AddressFromKey(&me.privateKey.PublicKey)
 		if err != nil {
 			return err
 		}
@@ -93,7 +93,7 @@ func (me *Identity) setPrivateKey(key *rsa.PrivateKey) error {
 	config.Save()
 
 	// Update Identity
-	me.address, err = utils.RicochetAddressFromKey(&key.PublicKey)
+	me.address, err = AddressFromKey(&key.PublicKey)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,11 @@ func (is *identityService) OnNewConnection(oc *protocol.OpenConnection) {
 	handler := &ProtocolConnection{
 		Conn: oc,
 		GetContactByHostname: func(hostname string) *Contact {
-			return identity.ContactList().ContactByAddress("ricochet:" + hostname)
+			address, ok := AddressFromPlainHost(hostname)
+			if !ok {
+				return nil
+			}
+			return identity.ContactList().ContactByAddress(address)
 		},
 	}
 	go oc.Process(handler)

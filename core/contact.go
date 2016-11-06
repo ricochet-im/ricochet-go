@@ -8,7 +8,6 @@ import (
 	"golang.org/x/net/context"
 	"log"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -50,7 +49,7 @@ func ContactFromConfig(core *Ricochet, id int, data ConfigContact, events *utils
 
 	if id < 0 {
 		return nil, fmt.Errorf("Invalid contact ID '%d'", id)
-	} else if len(data.Hostname) != 22 || !strings.HasSuffix(data.Hostname, ".onion") {
+	} else if !IsOnionValid(data.Hostname) {
 		return nil, fmt.Errorf("Invalid contact hostname '%s", data.Hostname)
 	}
 
@@ -78,7 +77,8 @@ func (c *Contact) Nickname() string {
 func (c *Contact) Address() string {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	return "ricochet:" + c.data.Hostname[0:16]
+	address, _ := AddressFromOnion(c.data.Hostname)
+	return address
 }
 
 func (c *Contact) Hostname() string {
@@ -110,9 +110,10 @@ func (c *Contact) Status() ricochet.Contact_Status {
 func (c *Contact) Data() *ricochet.Contact {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+	address, _ := AddressFromOnion(c.data.Hostname)
 	data := &ricochet.Contact{
 		Id:            int32(c.id),
-		Address:       "ricochet:" + c.data.Hostname[0:16],
+		Address:       address,
 		Nickname:      c.data.Nickname,
 		WhenCreated:   c.data.WhenCreated,
 		LastConnected: c.data.LastConnected,
@@ -134,9 +135,10 @@ func (c *Contact) Conversation() *Conversation {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	if c.conversation == nil {
+		address, _ := AddressFromOnion(c.data.Hostname)
 		entity := &ricochet.Entity{
 			ContactId: int32(c.id),
-			Address:   "ricochet:" + c.data.Hostname[0:16],
+			Address:   address,
 		}
 		c.conversation = NewConversation(c, entity, c.core.Identity.ConversationStream)
 	}
