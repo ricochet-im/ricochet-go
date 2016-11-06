@@ -34,6 +34,8 @@ type Contact struct {
 	connClosedChannel chan struct{}
 	connStopped       chan struct{}
 
+	timeConnected time.Time
+
 	outboundConnAuthKnown bool
 
 	conversation *Conversation
@@ -393,8 +395,10 @@ func (c *Contact) setConnection(conn *protocol.OpenConnection) error {
 	}
 
 	// Update LastConnected time
+	c.timeConnected = time.Now()
+
 	config := c.core.Config.OpenWrite()
-	c.data.LastConnected = time.Now().Format(time.RFC3339)
+	c.data.LastConnected = c.timeConnected.Format(time.RFC3339)
 	config.Contacts[strconv.Itoa(c.id)] = c.data
 	config.Save()
 
@@ -464,9 +468,10 @@ func (c *Contact) shouldReplaceConnection(conn *protocol.OpenConnection) bool {
 		// If the existing connection is in the same direction, always use the new one
 		log.Printf("Replacing existing same-direction connection %v with new connection %v for contact %v", c.connection, conn, c)
 		return true
-	} else if false {
+	} else if time.Since(c.timeConnected) > (30 * time.Second) {
 		// If the existing connection is more than 30 seconds old, use the new one
-		// XXX implement this
+		log.Printf("Replacing existing %v old connection %v with new connection %v for contact %v", time.Since(c.timeConnected), c.connection, conn, c)
+		return true
 	} else if preferOutbound := conn.MyHostname < conn.OtherHostname; preferOutbound == conn.Client {
 		// Fall back to string comparison of hostnames for a stable resolution
 		// New connection wins
