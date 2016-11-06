@@ -23,7 +23,10 @@ var (
 	backendServer  string
 	unsafeBackend  bool
 	backendMode    bool
+	connectAuto    bool
 	configPath     string = "identity.ricochet"
+	torAddress     string
+	torPassword    string
 )
 
 func main() {
@@ -41,6 +44,9 @@ func main() {
 	flag.StringVar(&backendServer, "listen", "", "Listen on `<address>` for client frontend connections")
 	flag.BoolVar(&unsafeBackend, "allow-unsafe-backend", false, "Allow a remote backend address. This is NOT RECOMMENDED and may harm your security or privacy. Do not use without a secure, trusted link")
 	flag.BoolVar(&backendMode, "only-backend", false, "Run backend without any commandline UI")
+	flag.BoolVar(&connectAuto, "connect", true, "Start connecting to the network automatically")
+	flag.StringVar(&torAddress, "tor-control", "", "Use the tor control port at `<address>`, which may be 'host:port' or 'unix:/path'")
+	flag.StringVar(&torPassword, "tor-control-password", "", "Use `<password>` to authenticate to the tor control port")
 	flag.Parse()
 	if len(flag.Args()) > 1 {
 		flag.Usage()
@@ -59,6 +65,9 @@ func main() {
 			os.Exit(1)
 		} else if configPath != "identity.ricochet" {
 			fmt.Printf("Cannot use -identity with -attach, because identity is stored at the backend\n")
+			os.Exit(1)
+		} else if torAddress != "" || torPassword != "" {
+			fmt.Printf("Cannot use -tor-control with -attach, because tor connections happen on the backend\n")
 			os.Exit(1)
 		}
 	}
@@ -176,6 +185,13 @@ func startBackend() error {
 		return err
 	}
 
+	if torAddress != "" {
+		core.Network.SetControlAddress(torAddress)
+	}
+	if torPassword != "" {
+		core.Network.SetControlPassword(torPassword)
+	}
+
 	var listener net.Listener
 	if backendServer == "" {
 		// In-process backend, using 'InnerNet' as a fake socket
@@ -208,6 +224,12 @@ func startBackend() error {
 			os.Exit(1)
 		}
 	}()
+
+	if connectAuto {
+		go func() {
+			core.Network.Start()
+		}()
+	}
 
 	return nil
 }
