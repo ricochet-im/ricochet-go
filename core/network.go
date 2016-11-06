@@ -6,7 +6,6 @@ import (
 	"github.com/ricochet-im/ricochet-go/core/utils"
 	"github.com/ricochet-im/ricochet-go/rpc"
 	"github.com/yawning/bulb"
-	bulbutils "github.com/yawning/bulb/utils"
 	"golang.org/x/net/context"
 	"golang.org/x/net/proxy"
 	"log"
@@ -65,23 +64,45 @@ func CreateNetwork() *Network {
 	}
 }
 
-// Start connection to the tor control port at 'address', with the optional
-// control password 'password'. This function blocks until the first connection
-// attempt is finished. The first return value says whether the connection has
-// been started; if true, the connection is up even if the first attempt failed.
-// The second return value is the connection attempt error, or nil on success.
-func (n *Network) Start(address, password string) (bool, error) {
+func (n *Network) SetControlAddress(address string) error {
+	n.controlMutex.Lock()
+	defer n.controlMutex.Unlock()
+	if n.stoppedSignal != nil {
+		return errors.New("Network is already started")
+	}
+
+	n.controlAddress = address
+	return nil
+}
+
+func (n *Network) SetControlPassword(password string) error {
+	n.controlMutex.Lock()
+	defer n.controlMutex.Unlock()
+	if n.stoppedSignal != nil {
+		return errors.New("Network is already started")
+	}
+
+	n.controlPassword = password
+	return nil
+}
+
+// Start connection to the tor control port. This function blocks until the first
+// connection attempt is finished. The first return value says whether the
+// connection has been started; if true, the connection is up even if the first
+// attempt failed. The second return value is the connection attempt error, or
+// nil on success.
+func (n *Network) Start() (bool, error) {
 	n.controlMutex.Lock()
 	if n.stoppedSignal != nil {
-		// This is an error, because address/password might not be the same
 		n.controlMutex.Unlock()
 		return false, errors.New("Network is already started")
 	}
-
+	if n.controlAddress == "" {
+		n.controlMutex.Unlock()
+		return false, errors.New("Control address not configured")
+	}
 	n.stopSignal = make(chan struct{})
 	n.stoppedSignal = make(chan struct{})
-	n.controlAddress = address
-	n.controlPassword = password
 	n.controlMutex.Unlock()
 
 	connectChannel := make(chan error)
@@ -176,10 +197,8 @@ func chooseSocksAddress(addresses []string, controlAddress string) (socksAddress
 		return selected, errors.New("No SOCKS port configured")
 	}
 
-	// controlAddress is in the form of tcp:// or unix://
-	if strings.HasPrefix(controlAddress, "tcp:") {
-		_, addrport, _ := bulbutils.ParseControlPortString(controlAddress)
-		addr, _, _ := net.SplitHostPort(addrport)
+	if !strings.HasPrefix(controlAddress, "unix:") {
+		addr, _, _ := net.SplitHostPort(controlAddress)
 		preferredIP = net.ParseIP(addr)
 		torOnLocalhost = preferredIP.IsLoopback()
 	}
@@ -467,8 +486,6 @@ func (n *Network) run(connectChannel chan<- error) {
 				n.conn.Close()
 				n.conn = nil
 			}
-			n.controlAddress = ""
-			n.controlPassword = ""
 			n.stoppedSignal = nil
 			n.status = ricochet.NetworkStatus{}
 			n.controlMutex.Unlock()
@@ -569,10 +586,13 @@ func (n *Network) connectControl() error {
 }
 
 func createConnection(address, password string) (*bulb.Conn, error) {
-	net, addr, err := bulbutils.ParseControlPortString(address)
-	if err != nil {
-		log.Printf("Parsing control network address '%s' failed: %v", address, err)
-		return nil, err
+	var net, addr string
+	if strings.HasPrefix(address, "unix:") {
+		net = "unix"
+		addr = address[5:]
+	} else {
+		net = "tcp"
+		addr = address
 	}
 
 	conn, err := bulb.Dial(net, addr)
@@ -590,7 +610,7 @@ func createConnection(address, password string) (*bulb.Conn, error) {
 
 	conn.StartAsyncReader()
 
-	log.Print("Control connected!")
+	log.Printf("Control connection to %s successful", address)
 	return conn, nil
 }
 

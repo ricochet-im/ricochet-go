@@ -6,6 +6,8 @@ import (
 	"math"
 	"math/big"
 	"math/rand"
+	"net"
+	"os"
 )
 
 type Ricochet struct {
@@ -14,18 +16,15 @@ type Ricochet struct {
 	Identity *Identity
 }
 
-func (core *Ricochet) Init(conf *Config) error {
+func (core *Ricochet) Init(conf *Config) (err error) {
 	initRand()
 
-	var err error
 	core.Config = conf
-	core.Network = CreateNetwork()
-	core.Identity, err = CreateIdentity(core)
-	if err != nil {
-		return err
-	}
 
-	return nil
+	core.Network = CreateNetwork()
+	core.setupNetwork()
+	core.Identity, err = CreateIdentity(core)
+	return
 }
 
 func initRand() {
@@ -35,4 +34,26 @@ func initRand() {
 	}
 
 	rand.Seed(n.Int64())
+}
+
+func (core *Ricochet) setupNetwork() {
+	socket := os.Getenv("TOR_CONTROL_SOCKET")
+	host := os.Getenv("TOR_CONTROL_HOST")
+	port := os.Getenv("TOR_CONTROL_PORT")
+	passwd := os.Getenv("TOR_CONTROL_PASSWD")
+
+	if socket != "" {
+		core.Network.SetControlAddress("unix:" + socket)
+	} else if host != "" {
+		if port == "" {
+			port = "9051"
+		}
+		core.Network.SetControlAddress(net.JoinHostPort(host, port))
+	} else {
+		core.Network.SetControlAddress("127.0.0.1:9051")
+	}
+
+	if passwd != "" {
+		core.Network.SetControlPassword(passwd)
+	}
 }

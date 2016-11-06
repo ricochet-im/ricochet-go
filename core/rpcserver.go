@@ -54,7 +54,7 @@ func (s *RpcServer) MonitorNetwork(req *ricochet.MonitorNetworkRequest, stream r
 func (s *RpcServer) StartNetwork(ctx context.Context, req *ricochet.StartNetworkRequest) (*ricochet.NetworkStatus, error) {
 	// err represents the result of the first connection attempt, but as long
 	// as 'ok' is true, the network has started and this call was successful.
-	ok, err := s.Core.Network.Start("tcp://127.0.0.1:9051", "")
+	ok, err := s.Core.Network.Start()
 	if !ok {
 		return nil, err
 	}
