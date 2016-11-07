@@ -264,12 +264,16 @@ func (n *Network) GetProxyDialer(forward proxy.Dialer) (proxy.Dialer, error) {
 func (n *Network) WaitForProxyDialer(forward proxy.Dialer, c context.Context) (proxy.Dialer, error) {
 	var monitor <-chan interface{}
 	for {
-		// Check if there's a proxy address available
+		// Check if there's a proxy address available and connection status is Ready
 		n.controlMutex.Lock()
 		socks := n.socksAddress
+		var connectionStatus ricochet.TorConnectionStatus
+		if n.status.Connection != nil {
+			connectionStatus = *n.status.Connection
+		}
 		n.controlMutex.Unlock()
 
-		if socks.IsValid() {
+		if connectionStatus.Status == ricochet.TorConnectionStatus_READY && socks.IsValid() {
 			return proxy.SOCKS5(socks.Network, socks.Address, nil, forward)
 		}
 
