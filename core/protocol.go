@@ -109,20 +109,19 @@ func (pc *ProtocolConnection) OnContactRequestAck(channelID int32, status string
 	}
 }
 
-// Managing Channels
-func (pc *ProtocolConnection) IsChannelAllowed(channelType string) bool {
-	switch channelType {
-	case "im.ricochet.auth.hidden-service":
-		return !pc.Conn.IsAuthed && pc.Contact == nil
-	case "im.ricochet.chat":
-		return pc.Conn.IsAuthed && pc.Contact != nil
-	case "im.ricochet.contact.request":
-		return pc.Conn.IsAuthed && pc.Contact == nil
+func (pc *ProtocolConnection) IsKnownContact(hostname string) bool {
+	// All uses of this are for authenticated contacts, so it's sufficient to check pc.Contact
+	if pc.Contact != nil {
+		contactHostname, _ := PlainHostFromOnion(pc.Contact.Hostname())
+		if hostname != contactHostname {
+			log.Panicf("IsKnownContact called for unexpected hostname '%s'", hostname)
+		}
+		return true
 	}
-
 	return false
 }
 
+// Managing Channels
 func (pc *ProtocolConnection) OnOpenChannelRequest(channelID int32, channelType string) {
 	log.Printf("open channel request: %v %v", channelID, channelType)
 	pc.Conn.AckOpenChannel(channelID, channelType)
