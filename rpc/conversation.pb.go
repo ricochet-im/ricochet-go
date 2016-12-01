@@ -91,6 +91,13 @@ func (m *ConversationEvent) String() string            { return proto.CompactTex
 func (*ConversationEvent) ProtoMessage()               {}
 func (*ConversationEvent) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{0} }
 
+func (m *ConversationEvent) GetType() ConversationEvent_Type {
+	if m != nil {
+		return m.Type
+	}
+	return ConversationEvent_NULL
+}
+
 func (m *ConversationEvent) GetMsg() *Message {
 	if m != nil {
 		return m.Msg
@@ -117,6 +124,27 @@ func (m *Entity) Reset()                    { *m = Entity{} }
 func (m *Entity) String() string            { return proto.CompactTextString(m) }
 func (*Entity) ProtoMessage()               {}
 func (*Entity) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{2} }
+
+func (m *Entity) GetContactId() int32 {
+	if m != nil {
+		return m.ContactId
+	}
+	return 0
+}
+
+func (m *Entity) GetAddress() string {
+	if m != nil {
+		return m.Address
+	}
+	return ""
+}
+
+func (m *Entity) GetIsSelf() bool {
+	if m != nil {
+		return m.IsSelf
+	}
+	return false
+}
 
 type Message struct {
 	Sender    *Entity `protobuf:"bytes,1,opt,name=sender" json:"sender,omitempty"`
@@ -149,6 +177,34 @@ func (m *Message) GetRecipient() *Entity {
 	return nil
 }
 
+func (m *Message) GetTimestamp() int64 {
+	if m != nil {
+		return m.Timestamp
+	}
+	return 0
+}
+
+func (m *Message) GetIdentifier() uint64 {
+	if m != nil {
+		return m.Identifier
+	}
+	return 0
+}
+
+func (m *Message) GetStatus() Message_Status {
+	if m != nil {
+		return m.Status
+	}
+	return Message_NULL
+}
+
+func (m *Message) GetText() string {
+	if m != nil {
+		return m.Text
+	}
+	return ""
+}
+
 type MarkConversationReadRequest struct {
 	Entity             *Entity `protobuf:"bytes,1,opt,name=entity" json:"entity,omitempty"`
 	LastRecvIdentifier uint64  `protobuf:"varint,2,opt,name=lastRecvIdentifier" json:"lastRecvIdentifier,omitempty"`
@@ -164,6 +220,13 @@ func (m *MarkConversationReadRequest) GetEntity() *Entity {
 		return m.Entity
 	}
 	return nil
+}
+
+func (m *MarkConversationReadRequest) GetLastRecvIdentifier() uint64 {
+	if m != nil {
+		return m.LastRecvIdentifier
+	}
+	return 0
 }
 
 func init() {

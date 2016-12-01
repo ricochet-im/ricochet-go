@@ -114,6 +114,20 @@ func (m *TorProcessStatus) String() string            { return proto.CompactText
 func (*TorProcessStatus) ProtoMessage()               {}
 func (*TorProcessStatus) Descriptor() ([]byte, []int) { return fileDescriptor4, []int{1} }
 
+func (m *TorProcessStatus) GetStatus() TorProcessStatus_Status {
+	if m != nil {
+		return m.Status
+	}
+	return TorProcessStatus_DISABLED
+}
+
+func (m *TorProcessStatus) GetErrorMessage() string {
+	if m != nil {
+		return m.ErrorMessage
+	}
+	return ""
+}
+
 type TorControlStatus struct {
 	Status       TorControlStatus_Status `protobuf:"varint,1,opt,name=status,enum=ricochet.TorControlStatus_Status" json:"status,omitempty"`
 	ErrorMessage string                  `protobuf:"bytes,2,opt,name=errorMessage" json:"errorMessage,omitempty"`
@@ -125,6 +139,27 @@ func (m *TorControlStatus) String() string            { return proto.CompactText
 func (*TorControlStatus) ProtoMessage()               {}
 func (*TorControlStatus) Descriptor() ([]byte, []int) { return fileDescriptor4, []int{2} }
 
+func (m *TorControlStatus) GetStatus() TorControlStatus_Status {
+	if m != nil {
+		return m.Status
+	}
+	return TorControlStatus_STOPPED
+}
+
+func (m *TorControlStatus) GetErrorMessage() string {
+	if m != nil {
+		return m.ErrorMessage
+	}
+	return ""
+}
+
+func (m *TorControlStatus) GetTorVersion() string {
+	if m != nil {
+		return m.TorVersion
+	}
+	return ""
+}
+
 type TorConnectionStatus struct {
 	Status            TorConnectionStatus_Status `protobuf:"varint,1,opt,name=status,enum=ricochet.TorConnectionStatus_Status" json:"status,omitempty"`
 	BootstrapProgress string                     `protobuf:"bytes,10,opt,name=bootstrapProgress" json:"bootstrapProgress,omitempty"`
@@ -135,6 +170,27 @@ func (m *TorConnectionStatus) Reset()                    { *m = TorConnectionSta
 func (m *TorConnectionStatus) String() string            { return proto.CompactTextString(m) }
 func (*TorConnectionStatus) ProtoMessage()               {}
 func (*TorConnectionStatus) Descriptor() ([]byte, []int) { return fileDescriptor4, []int{3} }
+
+func (m *TorConnectionStatus) GetStatus() TorConnectionStatus_Status {
+	if m != nil {
+		return m.Status
+	}
+	return TorConnectionStatus_UNKNOWN
+}
+
+func (m *TorConnectionStatus) GetBootstrapProgress() string {
+	if m != nil {
+		return m.BootstrapProgress
+	}
+	return ""
+}
+
+func (m *TorConnectionStatus) GetSocksAddress() []string {
+	if m != nil {
+		return m.SocksAddress
+	}
+	return nil
+}
 
 type NetworkStatus struct {
 	Process    *TorProcessStatus    `protobuf:"bytes,1,opt,name=process" json:"process,omitempty"`

@@ -22,6 +22,13 @@ func (m *Identity) String() string            { return proto.CompactTextString(m
 func (*Identity) ProtoMessage()               {}
 func (*Identity) Descriptor() ([]byte, []int) { return fileDescriptor3, []int{0} }
 
+func (m *Identity) GetAddress() string {
+	if m != nil {
+		return m.Address
+	}
+	return ""
+}
+
 type IdentityRequest struct {
 }
 

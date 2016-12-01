@@ -35,6 +35,13 @@ func (m *ServerStatusRequest) String() string            { return proto.CompactT
 func (*ServerStatusRequest) ProtoMessage()               {}
 func (*ServerStatusRequest) Descriptor() ([]byte, []int) { return fileDescriptor2, []int{1} }
 
+func (m *ServerStatusRequest) GetRpcVersion() int32 {
+	if m != nil {
+		return m.RpcVersion
+	}
+	return 0
+}
+
 type ServerStatusReply struct {
 	RpcVersion    int32  `protobuf:"varint,1,opt,name=rpcVersion" json:"rpcVersion,omitempty"`
 	ServerVersion string `protobuf:"bytes,2,opt,name=serverVersion" json:"serverVersion,omitempty"`
@@ -44,6 +51,20 @@ func (m *ServerStatusReply) Reset()                    { *m = ServerStatusReply{
 func (m *ServerStatusReply) String() string            { return proto.CompactTextString(m) }
 func (*ServerStatusReply) ProtoMessage()               {}
 func (*ServerStatusReply) Descriptor() ([]byte, []int) { return fileDescriptor2, []int{2} }
+
+func (m *ServerStatusReply) GetRpcVersion() int32 {
+	if m != nil {
+		return m.RpcVersion
+	}
+	return 0
+}
+
+func (m *ServerStatusReply) GetServerVersion() string {
+	if m != nil {
+		return m.ServerVersion
+	}
+	return ""
+}
 
 func init() {
 	proto.RegisterType((*Reply)(nil), "ricochet.Reply")
@@ -57,7 +78,7 @@ var _ grpc.ClientConn
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion3
+const _ = grpc.SupportPackageIsVersion4
 
 // Client API for RicochetCore service
 
@@ -78,7 +99,6 @@ type RicochetCoreClient interface {
 	// Stop all network connections and go offline. Blocks until the network
 	// has been taken offline, and returns the new network status.
 	StopNetwork(ctx context.Context, in *StopNetworkRequest, opts ...grpc.CallOption) (*NetworkStatus, error)
-	// XXX Service status
 	GetIdentity(ctx context.Context, in *IdentityRequest, opts ...grpc.CallOption) (*Identity, error)
 	// Query contacts and monitor for contact changes. The full contact list
 	// is sent in POPULATE events, terminated by a POPULATE event with no
@@ -319,7 +339,6 @@ type RicochetCoreServer interface {
 	// Stop all network connections and go offline. Blocks until the network
 	// has been taken offline, and returns the new network status.
 	StopNetwork(context.Context, *StopNetworkRequest) (*NetworkStatus, error)
-	// XXX Service status
 	GetIdentity(context.Context, *IdentityRequest) (*Identity, error)
 	// Query contacts and monitor for contact changes. The full contact list
 	// is sent in POPULATE events, terminated by a POPULATE event with no
@@ -669,7 +688,7 @@ var _RicochetCore_serviceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: fileDescriptor2,
+	Metadata: "core.proto",
 }
 
 func init() { proto.RegisterFile("core.proto", fileDescriptor2) }

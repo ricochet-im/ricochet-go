@@ -152,11 +152,53 @@ func (m *Contact) String() string            { return proto.CompactTextString(m)
 func (*Contact) ProtoMessage()               {}
 func (*Contact) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
 
+func (m *Contact) GetId() int32 {
+	if m != nil {
+		return m.Id
+	}
+	return 0
+}
+
+func (m *Contact) GetAddress() string {
+	if m != nil {
+		return m.Address
+	}
+	return ""
+}
+
+func (m *Contact) GetNickname() string {
+	if m != nil {
+		return m.Nickname
+	}
+	return ""
+}
+
+func (m *Contact) GetWhenCreated() string {
+	if m != nil {
+		return m.WhenCreated
+	}
+	return ""
+}
+
+func (m *Contact) GetLastConnected() string {
+	if m != nil {
+		return m.LastConnected
+	}
+	return ""
+}
+
 func (m *Contact) GetRequest() *ContactRequest {
 	if m != nil {
 		return m.Request
 	}
 	return nil
+}
+
+func (m *Contact) GetStatus() Contact_Status {
+	if m != nil {
+		return m.Status
+	}
+	return Contact_UNKNOWN
 }
 
 type ContactRequest struct {
@@ -171,6 +213,41 @@ func (m *ContactRequest) Reset()                    { *m = ContactRequest{} }
 func (m *ContactRequest) String() string            { return proto.CompactTextString(m) }
 func (*ContactRequest) ProtoMessage()               {}
 func (*ContactRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+
+func (m *ContactRequest) GetDirection() ContactRequest_Direction {
+	if m != nil {
+		return m.Direction
+	}
+	return ContactRequest_INBOUND
+}
+
+func (m *ContactRequest) GetAddress() string {
+	if m != nil {
+		return m.Address
+	}
+	return ""
+}
+
+func (m *ContactRequest) GetNickname() string {
+	if m != nil {
+		return m.Nickname
+	}
+	return ""
+}
+
+func (m *ContactRequest) GetText() string {
+	if m != nil {
+		return m.Text
+	}
+	return ""
+}
+
+func (m *ContactRequest) GetFromNickname() string {
+	if m != nil {
+		return m.FromNickname
+	}
+	return ""
+}
 
 type MonitorContactsRequest struct {
 }
@@ -212,6 +289,13 @@ func (m *ContactEvent) GetSubject() isContactEvent_Subject {
 		return m.Subject
 	}
 	return nil
+}
+
+func (m *ContactEvent) GetType() ContactEvent_Type {
+	if m != nil {
+		return m.Type
+	}
+	return ContactEvent_NULL
 }
 
 func (m *ContactEvent) GetContact() *Contact {
@@ -319,6 +403,20 @@ func (m *DeleteContactRequest) Reset()                    { *m = DeleteContactRe
 func (m *DeleteContactRequest) String() string            { return proto.CompactTextString(m) }
 func (*DeleteContactRequest) ProtoMessage()               {}
 func (*DeleteContactRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{5} }
+
+func (m *DeleteContactRequest) GetId() int32 {
+	if m != nil {
+		return m.Id
+	}
+	return 0
+}
+
+func (m *DeleteContactRequest) GetAddress() string {
+	if m != nil {
+		return m.Address
+	}
+	return ""
+}
 
 type DeleteContactReply struct {
 }
