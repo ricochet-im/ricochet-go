@@ -5,6 +5,12 @@ import (
 	"unicode/utf8"
 )
 
+const (
+	// Consistent with protocol's ContactRequestChannel
+	MaxMessageLength  = 2000
+	MaxNicknameLength = 30
+)
+
 // IsNicknameAcceptable returns true for strings that are usable as contact nicknames.
 // A nickname is acceptable if it:
 //   - Is composed of only valid UTF-8 sequences
