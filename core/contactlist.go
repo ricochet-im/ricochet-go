@@ -84,11 +84,15 @@ func (this *ContactList) AddContactRequest(address, name, fromName, text string)
 	if !IsAddressValid(address) {
 		return nil, errors.New("Invalid ricochet address")
 	}
+	if len(fromName) > 0 && !IsNicknameAcceptable(fromName) {
+		return nil, errors.New("Invalid nickname")
+	}
+	if len(text) > 0 && !IsMessageAcceptable(text) {
+		return nil, errors.New("Invalid message")
+	}
 
 	this.mutex.Lock()
 	defer this.mutex.Unlock()
-
-	// XXX validity checks on name/text also useful
 
 	for _, contact := range this.contacts {
 		if contact.Address() == address {
