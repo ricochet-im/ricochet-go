@@ -61,10 +61,10 @@
 		},
 		{
 			"importpath": "github.com/s-rah/go-ricochet",
-			"repository": "https://github.com/special/go-ricochet",
+			"repository": "https://github.com/s-rah/go-ricochet",
 			"vcs": "git",
-			"revision": "860ae9a0242f3761f495360425556a4879a4e0e6",
-			"branch": "api-handlers",
+			"revision": "5a720a08d052019a113e9c2a94d6f1a3f582f09e",
+			"branch": "master",
 			"notests": true
 		},
 		{
