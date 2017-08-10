@@ -151,11 +151,32 @@ func (s *RpcServer) DeleteContact(ctx context.Context, req *ricochet.DeleteConta
 }
 
 func (s *RpcServer) AcceptInboundRequest(ctx context.Context, req *ricochet.ContactRequest) (*ricochet.Contact, error) {
-	return nil, NotImplementedError
+	if req.Direction != ricochet.ContactRequest_INBOUND {
+		return nil, errors.New("Request must be inbound")
+	}
+	contactList := s.Core.Identity.ContactList()
+	request := contactList.InboundRequestByAddress(req.Address)
+	if request == nil {
+		return nil, errors.New("Request does not exist")
+	}
+	contact, err := request.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return contact.Data(), nil
 }
 
 func (s *RpcServer) RejectInboundRequest(ctx context.Context, req *ricochet.ContactRequest) (*ricochet.RejectInboundRequestReply, error) {
-	return nil, NotImplementedError
+	if req.Direction != ricochet.ContactRequest_INBOUND {
+		return nil, errors.New("Request must be inbound")
+	}
+	contactList := s.Core.Identity.ContactList()
+	request := contactList.InboundRequestByAddress(req.Address)
+	if request == nil {
+		return nil, errors.New("Request does not exist")
+	}
+	request.Reject()
+	return &ricochet.RejectInboundRequestReply{}, nil
 }
 
 func (s *RpcServer) MonitorConversations(req *ricochet.MonitorConversationsRequest, stream ricochet.RicochetCore_MonitorConversationsServer) error {

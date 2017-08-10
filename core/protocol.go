@@ -9,6 +9,8 @@ import (
 )
 
 type ProtocolConnection struct {
+	Core *Ricochet
+
 	Conn    *protocol.OpenConnection
 	Contact *Contact
 
@@ -95,6 +97,46 @@ func (pc *ProtocolConnection) OnAuthenticationResult(channelID int32, result boo
 
 // Contact Management
 func (pc *ProtocolConnection) OnContactRequest(channelID int32, nick string, message string) {
+	if pc.Conn.Client || !pc.Conn.IsAuthed || pc.Contact != nil {
+		pc.Conn.CloseChannel(channelID)
+		return
+	}
+
+	address, ok := AddressFromPlainHost(pc.Conn.OtherHostname)
+	if !ok {
+		pc.Conn.CloseChannel(channelID)
+		return
+	}
+	if len(nick) > 0 && !IsNicknameAcceptable(nick) {
+		log.Printf("protocol: Stripping unacceptable nickname from inbound request; encoded: %x", []byte(nick))
+		nick = ""
+	}
+	if len(message) > 0 && !IsMessageAcceptable(message) {
+		log.Printf("protocol: Stripping unacceptable message from inbound request; len: %d, encoded: %x", len(message), []byte(message))
+		message = ""
+	}
+
+	contactList := pc.Core.Identity.ContactList()
+	request, contact := contactList.AddOrUpdateInboundContactRequest(address, nick, message)
+
+	if contact != nil {
+		// Accepted immediately
+		pc.Conn.AckContactRequestOnResponse(channelID, "Accepted")
+		pc.Conn.CloseChannel(channelID)
+		contact.OnConnectionAuthenticated(pc.Conn, true)
+	} else if request != nil && !request.IsRejected() {
+		// Pending
+		pc.Conn.AckContactRequestOnResponse(channelID, "Pending")
+		request.SetConnection(pc.Conn, channelID)
+	} else {
+		// Rejected
+		pc.Conn.AckContactRequestOnResponse(channelID, "Rejected")
+		pc.Conn.CloseChannel(channelID)
+		pc.Conn.Close()
+		if request != nil {
+			contactList.RemoveInboundContactRequest(request)
+		}
+	}
 }
 
 func (pc *ProtocolConnection) OnContactRequestAck(channelID int32, status string) {

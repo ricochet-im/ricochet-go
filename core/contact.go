@@ -133,6 +133,12 @@ func (c *Contact) Data() *ricochet.Contact {
 	return data
 }
 
+func (c *Contact) IsRequest() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.data.Request.Pending
+}
+
 func (c *Contact) Conversation() *Conversation {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -312,6 +318,7 @@ func (c *Contact) connectOutbound(ctx context.Context, connChannel chan *protoco
 			// is fragile and dumb.
 			// XXX BUG: This means no backoff for authentication failure
 			handler := &ProtocolConnection{
+				Core:       c.core,
 				Conn:       oc,
 				Contact:    c,
 				MyHostname: c.core.Identity.Address()[9:],

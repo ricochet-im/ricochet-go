@@ -32,6 +32,8 @@ message ContactRequest {
     string nickname = 3;
     string text = 4;
     string fromNickname = 5;
+    string whenCreated = 6;
+    bool rejected = 7;
 }
 
 message MonitorContactsRequest {

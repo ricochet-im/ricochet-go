@@ -114,6 +114,7 @@ func (is *identityService) OnNewConnection(oc *protocol.OpenConnection) {
 	// XXX Should have pre-auth handling, timeouts
 	identity := is.Identity
 	handler := &ProtocolConnection{
+		Core: identity.core,
 		Conn: oc,
 		GetContactByHostname: func(hostname string) *Contact {
 			address, ok := AddressFromPlainHost(hostname)
