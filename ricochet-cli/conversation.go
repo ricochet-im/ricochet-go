@@ -240,6 +240,9 @@ func (c *Conversation) validateMessage(msg *ricochet.Message) error {
 
 func (c *Conversation) printMessage(msg *ricochet.Message) {
 	if !c.active {
+		if msg.Sender.IsSelf {
+			return
+		}
 		messages := fmt.Sprintf("%d new message", c.numUnread)
 		if c.numUnread > 1 {
 			messages += "s"
