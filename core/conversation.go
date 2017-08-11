@@ -2,9 +2,9 @@ package core
 
 import (
 	"errors"
-	protocol "github.com/s-rah/go-ricochet"
 	"github.com/ricochet-im/ricochet-go/core/utils"
 	"github.com/ricochet-im/ricochet-go/rpc"
+	protocol "github.com/s-rah/go-ricochet"
 	"log"
 	"math/rand"
 	"sync"
@@ -62,6 +62,10 @@ func (c *Conversation) Receive(id uint64, timestamp int64, text string) {
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+
+	// XXX The Qt implementation would discard duplicate messages by checking
+	// the most recent 5 messages for any received message that matches this one
+	// in both id and text. Should do that here.
 
 	c.messages = append(c.messages, message)
 	event := ricochet.ConversationEvent{
@@ -129,7 +133,9 @@ func (c *Conversation) Send(text string) (*ricochet.Message, error) {
 	conn := c.Contact.Connection()
 	if conn != nil {
 		sendMessageToConnection(conn, message)
-		message.Status = ricochet.Message_SENDING
+		// XXX go-ricochet doesn't support message IDs & ack properly yet, so skip SENDING
+		//message.Status = ricochet.Message_SENDING
+		message.Status = ricochet.Message_DELIVERED
 	}
 
 	c.messages = append(c.messages, message)
@@ -161,7 +167,9 @@ func (c *Conversation) SendQueuedMessages() int {
 		}
 
 		sendMessageToConnection(conn, message)
-		message.Status = ricochet.Message_SENDING
+		// XXX go-ricochet doesn't support message IDs & ack properly yet, so skip SENDING
+		//message.Status = ricochet.Message_SENDING
+		message.Status = ricochet.Message_DELIVERED
 		sent++
 
 		event := ricochet.ConversationEvent{
