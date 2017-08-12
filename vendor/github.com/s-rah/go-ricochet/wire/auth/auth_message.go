@@ -18,7 +18,7 @@ package Protocol_Data_AuthHiddenService
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
-import Protocol_Data_Control "github.com/s-rah/go-ricochet/control"
+import Protocol_Data_Control "github.com/s-rah/go-ricochet/wire/control"
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal

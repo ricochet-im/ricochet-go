@@ -3,8 +3,12 @@ package utils
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"io"
+)
+
+const (
+	InvalidPacketLengthError = Error("InvalidPacketLengthError")
+	InvalidChannelIDError    = Error("InvalidChannelIDError")
 )
 
 // RicochetData is a structure containing the raw data and the channel it the
@@ -36,11 +40,11 @@ type RicochetNetwork struct {
 func (rn *RicochetNetwork) SendRicochetPacket(dst io.Writer, channel int32, data []byte) error {
 	packet := make([]byte, 4+len(data))
 	if len(packet) > 65535 {
-		return errors.New("packet too large")
+		return InvalidPacketLengthError
 	}
 	binary.BigEndian.PutUint16(packet[0:2], uint16(len(packet)))
 	if channel < 0 || channel > 65535 {
-		return errors.New("invalid channel ID")
+		return InvalidChannelIDError
 	}
 	binary.BigEndian.PutUint16(packet[2:4], uint16(channel))
 	copy(packet[4:], data[:])
@@ -68,7 +72,7 @@ func (rn *RicochetNetwork) RecvRicochetPacket(reader io.Reader) (RicochetData, e
 
 	size := int(binary.BigEndian.Uint16(header[0:2]))
 	if size < 4 {
-		return packet, errors.New("invalid packet length")
+		return packet, InvalidPacketLengthError
 	}
 
 	packet.Channel = int32(binary.BigEndian.Uint16(header[2:4]))

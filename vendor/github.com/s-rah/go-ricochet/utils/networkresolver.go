@@ -1,10 +1,15 @@
 package utils
 
 import (
-	"errors"
 	"golang.org/x/net/proxy"
 	"net"
 	"strings"
+)
+
+const (
+	CannotResolveLocalTCPAddressError = Error("CannotResolveLocalTCPAddressError")
+	CannotDialLocalTCPAddressError    = Error("CannotDialLocalTCPAddressError")
+	CannotDialRicochetAddressError    = Error("CannotDialRicochetAddressError")
 )
 
 // NetworkResolver allows a client to resolve various hostnames to connections
@@ -21,11 +26,11 @@ func (nr *NetworkResolver) Resolve(hostname string) (net.Conn, string, error) {
 		addrParts := strings.Split(hostname, "|")
 		tcpAddr, err := net.ResolveTCPAddr("tcp", addrParts[0])
 		if err != nil {
-			return nil, "", errors.New("Cannot Resolve Local TCP Address")
+			return nil, "", CannotResolveLocalTCPAddressError
 		}
 		conn, err := net.DialTCP("tcp", nil, tcpAddr)
 		if err != nil {
-			return nil, "", errors.New("Cannot Dial Local TCP Address")
+			return nil, "", CannotDialLocalTCPAddressError
 		}
 
 		// return just the onion address, not the local override for the hostname
@@ -45,8 +50,8 @@ func (nr *NetworkResolver) Resolve(hostname string) (net.Conn, string, error) {
 
 	conn, err := torDialer.Dial("tcp", resolvedHostname+".onion:9878")
 	if err != nil {
-		return nil, "", errors.New("Cannot Dial Remote Ricochet Address")
+		return nil, "", CannotDialRicochetAddressError
 	}
-	//conn.SetDeadline(time.Now().Add(5 * time.Second))
+
 	return conn, resolvedHostname, nil
 }

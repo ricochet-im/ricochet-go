@@ -2,49 +2,104 @@ package main
 
 import (
 	"github.com/s-rah/go-ricochet"
+	"github.com/s-rah/go-ricochet/channels"
+	"github.com/s-rah/go-ricochet/connection"
+	"github.com/s-rah/go-ricochet/utils"
 	"log"
+	"time"
 )
 
 // EchoBotService is an example service which simply echoes back what a client
 // sends it.
-type EchoBotService struct {
-	goricochet.StandardRicochetService
+type RicochetEchoBot struct {
+	connection.AutoConnectionHandler
+	messages chan string
 }
 
-func (ebs *EchoBotService) OnNewConnection(oc *goricochet.OpenConnection) {
-	ebs.StandardRicochetService.OnNewConnection(oc)
-	go oc.Process(&EchoBotConnection{})
+func (echobot *RicochetEchoBot) ContactRequest(name string, message string) string {
+	return "Pending"
 }
 
-type EchoBotConnection struct {
-	goricochet.StandardRicochetConnection
+func (echobot *RicochetEchoBot) ContactRequestRejected() {
+}
+func (echobot *RicochetEchoBot) ContactRequestAccepted() {
+}
+func (echobot *RicochetEchoBot) ContactRequestError() {
 }
 
-// IsKnownContact is configured to always accept Contact Requests
-func (ebc *EchoBotConnection) IsKnownContact(hostname string) bool {
+func (echobot *RicochetEchoBot) ChatMessage(messageID uint32, when time.Time, message string) bool {
+	echobot.messages <- message
 	return true
 }
 
-// OnContactRequest - we always accept new contact request.
-func (ebc *EchoBotConnection) OnContactRequest(channelID int32, nick string, message string) {
-	ebc.StandardRicochetConnection.OnContactRequest(channelID, nick, message)
-	ebc.Conn.AckContactRequestOnResponse(channelID, "Accepted")
-	ebc.Conn.CloseChannel(channelID)
+func (echobot *RicochetEchoBot) ChatMessageAck(messageID uint32) {
+
 }
 
-// OnChatMessage we acknowledge the message, grab the message content and send it back - opening
-// a new channel if necessary.
-func (ebc *EchoBotConnection) OnChatMessage(channelID int32, messageID int32, message string) {
-	log.Printf("Received Message from %s: %s", ebc.Conn.OtherHostname, message)
-	ebc.Conn.AckChatMessage(channelID, messageID)
-	if ebc.Conn.GetChannelType(6) == "none" {
-		ebc.Conn.OpenChatChannel(6)
+func (echobot *RicochetEchoBot) Connect(privateKeyFile string, hostname string) {
+
+	privateKey, _ := utils.LoadPrivateKeyFromFile(privateKeyFile)
+	echobot.messages = make(chan string)
+
+	echobot.Init()
+	echobot.RegisterChannelHandler("im.ricochet.contact.request", func() channels.Handler {
+		contact := new(channels.ContactRequestChannel)
+		contact.Handler = echobot
+		return contact
+	})
+	echobot.RegisterChannelHandler("im.ricochet.chat", func() channels.Handler {
+		chat := new(channels.ChatChannel)
+		chat.Handler = echobot
+		return chat
+	})
+
+	rc, _ := goricochet.Open(hostname)
+	known, err := connection.HandleOutboundConnection(rc).ProcessAuthAsClient(privateKey)
+	if err == nil {
+
+		go rc.Process(echobot)
+
+		if !known {
+			err := rc.Do(func() error {
+				_, err := rc.RequestOpenChannel("im.ricochet.contact.request",
+					&channels.ContactRequestChannel{
+						Handler: echobot,
+						Name:    "EchoBot",
+						Message: "I LIVE 😈😈!!!!",
+					})
+				return err
+			})
+			if err != nil {
+				log.Printf("could not contact %s", err)
+			}
+		}
+
+		rc.Do(func() error {
+			_, err := rc.RequestOpenChannel("im.ricochet.chat", &channels.ChatChannel{Handler: echobot})
+			return err
+		})
+		for {
+			message := <-echobot.messages
+			log.Printf("Received Message: %s", message)
+			rc.Do(func() error {
+				log.Printf("Finding Chat Channel")
+				channel := rc.Channel("im.ricochet.chat", channels.Outbound)
+				if channel != nil {
+					log.Printf("Found Chat Channel")
+					chatchannel, ok := channel.Handler.(*channels.ChatChannel)
+					if ok {
+						chatchannel.SendMessage(message)
+					}
+				} else {
+					log.Printf("Could not find chat channel")
+				}
+				return nil
+			})
+		}
 	}
-	ebc.Conn.SendMessage(6, message)
 }
 
 func main() {
-	ricochetService := new(EchoBotService)
-	ricochetService.Init("./private_key")
-	ricochetService.Listen(ricochetService, 12345)
+	echoBot := new(RicochetEchoBot)
+	echoBot.Connect("private_key", "oqf7z4ot6kuejgam")
 }
