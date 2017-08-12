@@ -159,6 +159,11 @@ func (s *RpcServer) AcceptInboundRequest(ctx context.Context, req *ricochet.Cont
 	if request == nil {
 		return nil, errors.New("Request does not exist")
 	}
+	if len(req.FromNickname) > 0 {
+		if err := request.SetNickname(req.FromNickname); err != nil {
+			return nil, err
+		}
+	}
 	contact, err := request.Accept()
 	if err != nil {
 		return nil, err

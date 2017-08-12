@@ -82,6 +82,18 @@ func (cr *InboundContactRequest) Update(nickname, message string) {
 	}
 }
 
+func (cr *InboundContactRequest) SetNickname(nickname string) error {
+	cr.mutex.Lock()
+	defer cr.mutex.Unlock()
+
+	if IsNicknameAcceptable(nickname) {
+		cr.data.FromNickname = nickname
+	} else {
+		return errors.New("Invalid nickname")
+	}
+	return nil
+}
+
 func (cr *InboundContactRequest) Accept() (*Contact, error) {
 	cr.mutex.Lock()
 	defer cr.mutex.Unlock()

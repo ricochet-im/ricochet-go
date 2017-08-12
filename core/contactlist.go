@@ -22,8 +22,9 @@ type ContactList struct {
 
 func LoadContactList(core *Ricochet) (*ContactList, error) {
 	list := &ContactList{
-		core:   core,
-		events: utils.CreatePublisher(),
+		core:            core,
+		events:          utils.CreatePublisher(),
+		inboundRequests: make(map[string]*InboundContactRequest),
 	}
 
 	config := core.Config.OpenRead()
@@ -46,7 +47,6 @@ func LoadContactList(core *Ricochet) (*ContactList, error) {
 		list.contacts[id] = contact
 	}
 
-	// XXX Requests aren't implemented
 	return list, nil
 }
 
