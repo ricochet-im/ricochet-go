@@ -208,6 +208,9 @@ func (this *ContactList) RemoveContact(contact *Contact) error {
 		return errors.New("Not in contact list")
 	}
 
+	// XXX How do we safely make sure that the contact has stopped everything, and that
+	// nobody is going to block on it or keep referencing it..? This is insufficient, it
+	// leaves a goroutine up among other things.
 	contact.StopConnection()
 
 	config := this.core.Config.OpenWrite()

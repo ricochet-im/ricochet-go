@@ -6,8 +6,10 @@ import (
 	"errors"
 	"github.com/ricochet-im/ricochet-go/core/utils"
 	protocol "github.com/s-rah/go-ricochet"
+	connection "github.com/s-rah/go-ricochet/connection"
 	"github.com/yawning/bulb/utils/pkcs1"
 	"log"
+	"net"
 	"sync"
 )
 
@@ -103,34 +105,6 @@ func (me *Identity) setPrivateKey(key *rsa.PrivateKey) error {
 	return nil
 }
 
-type identityService struct {
-	Identity   *Identity
-	MyHostname string
-}
-
-func (is *identityService) OnNewConnection(oc *protocol.OpenConnection) {
-	log.Printf("Inbound connection accepted")
-	oc.MyHostname = is.MyHostname
-	// XXX Should have pre-auth handling, timeouts
-	identity := is.Identity
-	handler := &ProtocolConnection{
-		Core: identity.core,
-		Conn: oc,
-		GetContactByHostname: func(hostname string) *Contact {
-			address, ok := AddressFromPlainHost(hostname)
-			if !ok {
-				return nil
-			}
-			return identity.ContactList().ContactByAddress(address)
-		},
-	}
-	go oc.Process(handler)
-}
-
-func (is *identityService) OnFailedConnection(err error) {
-	log.Printf("Inbound connection failed: %v", err)
-}
-
 // BUG(special): No error handling for failures under publishService
 func (me *Identity) publishService(key *rsa.PrivateKey) {
 	// This call will block until a control connection is available and the
@@ -160,17 +134,72 @@ func (me *Identity) publishService(key *rsa.PrivateKey) {
 	}
 
 	log.Printf("Identity service published, accepting connections")
-	is := &identityService{
-		Identity:   me,
-		MyHostname: me.Address()[9:],
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("Identity listener failed: %v", err)
+			// XXX handle
+			return
+		}
+
+		// Handle connection in a separate goroutine and continue listening
+		go me.handleInboundConnection(conn)
+	}
+}
+
+func (me *Identity) handleInboundConnection(conn net.Conn) error {
+	defer func() {
+		// Close conn on return unless explicitly cleared
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+
+	contactByHostname := func(hostname string) (*Contact, error) {
+		address, ok := AddressFromPlainHost(hostname)
+		if !ok {
+			// This would be a bug
+			return nil, errors.New("invalid authenticated hostname")
+		}
+		return me.contactList.ContactByAddress(address), nil
+	}
+	lookupContactAuth := func(hostname string, publicKey rsa.PublicKey) (bool, bool) {
+		contact, err := contactByHostname(hostname)
+		if err != nil {
+			return false, false
+		}
+		// allowed, known
+		return true, contact != nil
 	}
 
-	err = protocol.Serve(listener, is)
+	rc, err := protocol.NegotiateVersionInbound(conn)
 	if err != nil {
-		log.Printf("Identity listener failed: %v", err)
-		// XXX handle
-		return
+		log.Printf("Inbound connection failed: %v", err)
+		return err
 	}
+
+	authHandler := connection.HandleInboundConnection(rc)
+	err = authHandler.ProcessAuthAsServer(me.privateKey, lookupContactAuth)
+	if err != nil {
+		log.Printf("Inbound connection auth failed: %v", err)
+		return err
+	}
+	contact, err := contactByHostname(rc.RemoteHostname)
+	if err != nil {
+		log.Printf("Inbound connection lookup failed: %v", err)
+		return err
+	}
+
+	if contact != nil {
+		// Known contact, pass the new connection to Contact
+		contact.AssignConnection(rc)
+		conn = nil
+		return nil
+	}
+
+	// XXX-protocol Unknown contact, should pass to handler for contact requests
+	log.Printf("Inbound connection is a contact request, but that's not implemented yet")
+	return errors.New("inbound contact request connections aren't implemented")
 }
 
 func (me *Identity) Address() string {

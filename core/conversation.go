@@ -4,7 +4,7 @@ import (
 	"errors"
 	"github.com/ricochet-im/ricochet-go/core/utils"
 	"github.com/ricochet-im/ricochet-go/rpc"
-	protocol "github.com/s-rah/go-ricochet"
+	connection "github.com/s-rah/go-ricochet/connection"
 	"log"
 	"math/rand"
 	"sync"
@@ -182,19 +182,23 @@ func (c *Conversation) SendQueuedMessages() int {
 	return sent
 }
 
-func sendMessageToConnection(conn *protocol.OpenConnection, message *ricochet.Message) {
-	// XXX hardcoded channel IDs, also channel IDs shouldn't be exposed
-	channelId := int32(7)
-	if !conn.Client {
-		channelId++
-	}
-	// XXX no error handling
-	if conn.GetChannelType(channelId) != "im.ricochet.chat" {
-		conn.OpenChatChannel(channelId)
-	}
+func sendMessageToConnection(conn *connection.Connection, message *ricochet.Message) {
+	// XXX
+	panic("sendMessageToConnection needs implementing for new protocol API")
+	/*
+		// XXX hardcoded channel IDs, also channel IDs shouldn't be exposed
+		channelId := int32(7)
+		if conn.IsInbound {
+			channelId++
+		}
+		// XXX no error handling
+		if conn.GetChannelType(channelId) != "im.ricochet.chat" {
+			conn.OpenChatChannel(channelId)
+		}
 
-	// XXX no message IDs
-	conn.SendMessage(channelId, message.Text)
+		// XXX no message IDs
+		conn.SendMessage(channelId, message.Text)
+	*/
 }
 
 // XXX This is inefficient -- it'll usually only be marking the last message
