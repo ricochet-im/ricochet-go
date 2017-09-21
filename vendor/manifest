@@ -23,7 +23,7 @@
 			"importpath": "github.com/chzyer/readline",
 			"repository": "https://github.com/special/readline",
 			"vcs": "git",
-			"revision": "435ac8270991572ea8df6de2add266b6d818d9f3",
+			"revision": "e06700a8ff17afd011891f52e148da8dcf84ee2f",
 			"branch": "refresh-race",
 			"notests": true
 		},
