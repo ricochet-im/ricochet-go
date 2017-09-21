@@ -20,6 +20,7 @@ type UI struct {
 	Client *Client
 
 	CurrentContact *Contact
+	commandMode    bool
 
 	baseConfig     *readline.Config
 	baseChatConfig *readline.Config
@@ -54,17 +55,12 @@ func (ui *UI) Execute(line string) error {
 	ui.Client.Block()
 	defer ui.Client.Unblock()
 
-	words := strings.SplitN(line, " ", 2)
-
-	if ui.CurrentContact != nil {
-		if len(words[0]) > 0 && words[0][0] == '/' {
-			words[0] = words[0][1:]
-		} else {
-			ui.CurrentContact.Conversation.SendMessage(line)
-			return nil
-		}
+	if ui.CurrentContact != nil && !ui.commandMode {
+		ui.CurrentContact.Conversation.SendMessage(line)
+		return nil
 	}
 
+	words := strings.SplitN(line, " ", 2)
 	if id, err := strconv.Atoi(words[0]); err == nil {
 		contact := ui.Client.Contacts.ById(int32(id))
 		if contact != nil {
@@ -280,36 +276,55 @@ type conversationInputConfig struct {
 	BaseConfig *readline.Config
 	PromptFmt  string
 
+	CommandModeFlag *bool
+	editingLine     []rune
+
 	usingConfig     bool
 	stopPromptTimer chan struct{}
 }
 
 func (cc *conversationInputConfig) OnChange(line []rune, pos int, key rune) ([]rune, int, bool) {
-	if len(line) == 0 && key != 0 && !cc.usingConfig {
-		cc.Install()
-	}
+	cc.editingLine = line
 
-	if len(line) > 0 && line[0] == '/' {
-		if cc.usingConfig {
-			cc.stopPromptTimer <- struct{}{}
-			cc.usingConfig = false
-			close(cc.stopPromptTimer)
-			cc.BaseConfig.Listener = cc.Config.Listener
-			cc.Input.SetConfig(cc.BaseConfig)
-		}
-	} else if !cc.usingConfig {
-		line = append([]rune{'/'}, line...)
+	// Unset command mode at the beginning of a new read
+	if line == nil && pos == 0 && key == 0 {
+		cc.Install()
 	}
 
 	return line, pos, true
 }
 
+func (cc *conversationInputConfig) FilterInputRune(key rune) (rune, bool) {
+	if key == '/' && len(cc.editingLine) == 0 && cc.usingConfig {
+		// '/' at the beginning of the input triggers command mode
+		cc.stopPromptTimer <- struct{}{}
+		cc.usingConfig = false
+		close(cc.stopPromptTimer)
+		cc.BaseConfig.Listener = cc.Config.Listener
+		cc.BaseConfig.FuncFilterInputRune = cc.FilterInputRune
+		cc.Input.SetConfig(cc.BaseConfig)
+		*cc.CommandModeFlag = true
+
+		// The / is suppressed from the output
+		return key, false
+	} else if (key == readline.CharBackspace || key == readline.CharCtrlH) &&
+		len(cc.editingLine) == 0 && !cc.usingConfig {
+		// Backspace on an empty command mode line unsets command mode
+		cc.Install()
+		return key, false
+	} else {
+		return key, true
+	}
+}
+
 func (cc *conversationInputConfig) Install() {
 	if !cc.usingConfig {
 		cc.usingConfig = true
+		cc.Config.FuncFilterInputRune = cc.FilterInputRune
 		cc.Input.SetConfig(cc.Config)
 		cc.stopPromptTimer = make(chan struct{})
 		go cc.updatePromptTimer()
+		*cc.CommandModeFlag = false
 	}
 }
 
@@ -320,7 +335,9 @@ func (cc *conversationInputConfig) Remove() {
 		cc.stopPromptTimer <- struct{}{}
 		cc.usingConfig = false
 		close(cc.stopPromptTimer)
+		cc.BaseConfig.FuncFilterInputRune = nil
 		cc.Input.SetConfig(cc.BaseConfig)
+		*cc.CommandModeFlag = true
 	}
 }
 
@@ -346,10 +363,11 @@ func (ui *UI) setupConversationPrompt() {
 	}
 
 	listener := &conversationInputConfig{
-		Input:      ui.Input,
-		Config:     ui.baseChatConfig.Clone(),
-		BaseConfig: ui.baseConfig,
-		PromptFmt:  fmt.Sprintf(ui.baseChatConfig.Prompt, "%s", ui.CurrentContact.Data.Nickname),
+		Input:           ui.Input,
+		Config:          ui.baseChatConfig.Clone(),
+		BaseConfig:      ui.baseConfig,
+		PromptFmt:       fmt.Sprintf(ui.baseChatConfig.Prompt, "%s", ui.CurrentContact.Data.Nickname),
+		CommandModeFlag: &ui.commandMode,
 	}
 	listener.Config.Listener = listener
 	listener.Install()
