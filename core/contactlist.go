@@ -298,7 +298,8 @@ func (cl *ContactList) RemoveInboundContactRequest(request *InboundContactReques
 		return errors.New("Request is not in contact list")
 	}
 
-	request.CloseConnection()
+	// Close connection asynchronously to avoid potential deadlocking
+	go request.CloseConnection()
 	// XXX Remove from config
 
 	delete(cl.inboundRequests, requestData.Address)

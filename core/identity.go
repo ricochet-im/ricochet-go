@@ -197,9 +197,12 @@ func (me *Identity) handleInboundConnection(conn net.Conn) error {
 		return nil
 	}
 
-	// XXX-protocol Unknown contact, should pass to handler for contact requests
-	log.Printf("Inbound connection is a contact request, but that's not implemented yet")
-	return errors.New("inbound contact request connections aren't implemented")
+	err = HandleInboundRequestConnection(rc, me.contactList)
+	if err == nil {
+		// Connection now belongs to an accepted contact, don't close it
+		conn = nil
+	}
+	return err
 }
 
 func (me *Identity) Address() string {
