@@ -2,6 +2,7 @@ package core
 
 import (
 	"crypto"
+	"crypto/rsa"
 	"errors"
 	"github.com/ricochet-im/ricochet-go/core/utils"
 	"github.com/ricochet-im/ricochet-go/rpc"
@@ -340,12 +341,13 @@ func (n *Network) getConnection() *bulb.Conn {
 // is lost and reconnected, the service will be re-added automatically.
 // BUG(special): Errors that occur after reconnecting cannot be detected.
 func (n *Network) AddOnionPorts(ports []bulb.OnionPortSpec, key crypto.PrivateKey) (*OnionService, error) {
+	// Treat nil *rsa.PrivateKey as nil
+	if v, ok := key.(*rsa.PrivateKey); ok && v == nil {
+		key = nil
+	}
 	if key == nil {
-		// Ask for a new key, force RSA1024
-		key = &bulb.OnionPrivateKey{
-			KeyType: "NEW",
-			Key:     "RSA1024",
-		}
+		// Ask for a new key
+		key = &bulb.OnionPrivateKey{}
 	}
 
 	conn := n.getConnection()
