@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/golang/protobuf/proto"
 	"github.com/ricochet-im/ricochet-go/core/utils"
 	"github.com/ricochet-im/ricochet-go/rpc"
 	protocol "github.com/s-rah/go-ricochet"
@@ -14,18 +15,11 @@ import (
 	"time"
 )
 
-// XXX There is generally a lot of duplication and boilerplate between
-// Contact, ConfigContact, and rpc.Contact. This should be reduced somehow.
-
-// XXX Consider replacing the config contact with the protobuf structure,
-// and extending the protobuf structure for everything it needs.
-
 type Contact struct {
 	core *Ricochet
 
-	id     int
-	data   ConfigContact
-	status ricochet.Contact_Status
+	id   int
+	data *ricochet.Contact
 
 	mutex  sync.Mutex
 	events *utils.Publisher
@@ -41,7 +35,7 @@ type Contact struct {
 	conversation *Conversation
 }
 
-func ContactFromConfig(core *Ricochet, id int, data ConfigContact, events *utils.Publisher) (*Contact, error) {
+func ContactFromConfig(core *Ricochet, id int, data *ricochet.Contact, events *utils.Publisher) (*Contact, error) {
 	contact := &Contact{
 		core:              core,
 		id:                id,
@@ -53,16 +47,18 @@ func ContactFromConfig(core *Ricochet, id int, data ConfigContact, events *utils
 
 	if id < 0 {
 		return nil, fmt.Errorf("Invalid contact ID '%d'", id)
-	} else if !IsOnionValid(data.Hostname) {
-		return nil, fmt.Errorf("Invalid contact hostname '%s", data.Hostname)
+	} else if !IsAddressValid(data.Address) {
+		return nil, fmt.Errorf("Invalid contact address '%s", data.Address)
 	}
 
-	if data.Request.Pending {
-		if data.Request.WhenRejected != "" {
-			contact.status = ricochet.Contact_REJECTED
+	if data.Request != nil {
+		if data.Request.Rejected {
+			contact.data.Status = ricochet.Contact_REJECTED
 		} else {
-			contact.status = ricochet.Contact_REQUEST
+			contact.data.Status = ricochet.Contact_REQUEST
 		}
+	} else if contact.data.Status != ricochet.Contact_REJECTED {
+		contact.data.Status = ricochet.Contact_UNKNOWN
 	}
 
 	return contact, nil
@@ -81,14 +77,14 @@ func (c *Contact) Nickname() string {
 func (c *Contact) Address() string {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	address, _ := AddressFromOnion(c.data.Hostname)
-	return address
+	return c.data.Address
 }
 
 func (c *Contact) Hostname() string {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	return c.data.Hostname
+	hostname, _ := OnionFromAddress(c.data.Address)
+	return hostname
 }
 
 func (c *Contact) LastConnected() time.Time {
@@ -108,47 +104,28 @@ func (c *Contact) WhenCreated() time.Time {
 func (c *Contact) Status() ricochet.Contact_Status {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	return c.status
+	return c.data.Status
 }
 
 func (c *Contact) Data() *ricochet.Contact {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	address, _ := AddressFromOnion(c.data.Hostname)
-	data := &ricochet.Contact{
-		Id:            int32(c.id),
-		Address:       address,
-		Nickname:      c.data.Nickname,
-		WhenCreated:   c.data.WhenCreated,
-		LastConnected: c.data.LastConnected,
-		Status:        c.status,
-	}
-	if c.data.Request.Pending {
-		data.Request = &ricochet.ContactRequest{
-			Direction:    ricochet.ContactRequest_OUTBOUND,
-			Address:      data.Address,
-			Nickname:     data.Nickname,
-			Text:         c.data.Request.Message,
-			FromNickname: c.data.Request.MyNickname,
-		}
-	}
-	return data
+	return proto.Clone(c.data).(*ricochet.Contact)
 }
 
 func (c *Contact) IsRequest() bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	return c.data.Request.Pending
+	return c.data.Request != nil
 }
 
 func (c *Contact) Conversation() *Conversation {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	if c.conversation == nil {
-		address, _ := AddressFromOnion(c.data.Hostname)
 		entity := &ricochet.Entity{
 			ContactId: int32(c.id),
-			Address:   address,
+			Address:   c.data.Address,
 		}
 		c.conversation = NewConversation(c, entity, c.core.Identity.ConversationStream)
 	}
@@ -187,7 +164,7 @@ func (c *Contact) shouldMakeOutboundConnections() bool {
 	defer c.mutex.Unlock()
 
 	// Don't make connections to contacts in the REJECTED state
-	if c.status == ricochet.Contact_REJECTED {
+	if c.data.Status == ricochet.Contact_REJECTED {
 		return false
 	}
 
@@ -263,7 +240,7 @@ func (c *Contact) contactConnection() {
 			// already closed. If there was an existing connection and this returns nil,
 			// the old connection is closed but c.connection has not been reset.
 			if err := c.considerUsingConnection(conn); err != nil {
-				log.Printf("Discarded new contact %s connection: %s", c.data.Hostname, err)
+				log.Printf("Discarded new contact %s connection: %s", c.data.Address, err)
 				go closeUnhandledConnection(conn)
 				c.mutex.Unlock()
 				continue
@@ -335,8 +312,8 @@ func (c *Contact) connectOutbound(ctx context.Context, connChannel chan *connect
 		Network:     c.core.Network,
 		NeverGiveUp: true,
 	}
-	hostname := c.data.Hostname
-	isRequest := c.data.Request.Pending
+	hostname, _ := OnionFromAddress(c.data.Address)
+	isRequest := c.data.Request != nil
 	c.mutex.Unlock()
 
 	for {
@@ -446,8 +423,8 @@ func (c *Contact) sendContactRequest(conn *connection.Connection, ctx context.Co
 		_, err := conn.RequestOpenChannel("im.ricochet.contact.request",
 			&channels.ContactRequestChannel{
 				Handler: &requestChannelHandler{Response: responseChan},
-				Name:    c.data.Request.MyNickname, // XXX mutex
-				Message: c.data.Request.Message,
+				Name:    c.data.Request.FromNickname, // XXX mutex
+				Message: c.data.Request.Text,
 			})
 		return err
 	})
@@ -502,9 +479,9 @@ func (c *Contact) considerUsingConnection(conn *connection.Connection) error {
 	}()
 
 	if conn.IsInbound {
-		log.Printf("Contact %s has a new inbound connection", c.data.Hostname)
+		log.Printf("Contact %s has a new inbound connection", c.data.Address)
 	} else {
-		log.Printf("Contact %s has a new outbound connection", c.data.Hostname)
+		log.Printf("Contact %s has a new outbound connection", c.data.Address)
 	}
 
 	if conn == c.connection {
@@ -515,8 +492,9 @@ func (c *Contact) considerUsingConnection(conn *connection.Connection) error {
 		return fmt.Errorf("Connection %v is not authenticated", conn)
 	}
 
-	if c.data.Hostname[0:16] != conn.RemoteHostname {
-		return fmt.Errorf("Connection hostname %s doesn't match contact hostname %s when assigning connection", conn.RemoteHostname, c.data.Hostname[0:16])
+	plainHost, _ := PlainHostFromAddress(c.data.Address)
+	if plainHost != conn.RemoteHostname {
+		return fmt.Errorf("Connection hostname %s doesn't match contact hostname %s when assigning connection", conn.RemoteHostname, plainHost)
 	}
 
 	if c.connection != nil && !c.shouldReplaceConnection(conn) {
@@ -539,28 +517,29 @@ func (c *Contact) considerUsingConnection(conn *connection.Connection) error {
 // Assumes c.mutex is held.
 func (c *Contact) onConnectionStateChanged() {
 	if c.connection != nil {
-		if c.data.Request.Pending && c.connection.IsInbound {
+		if c.data.Request != nil && c.connection.IsInbound {
 			// Inbound connection implicitly accepts the contact request and can continue as a contact
 			// Outbound request logic is all handled by connectOutbound.
 			log.Printf("Contact request implicitly accepted by contact %v", c)
 			c.updateContactRequest("Accepted")
 		} else {
-			c.status = ricochet.Contact_ONLINE
+			c.data.Status = ricochet.Contact_ONLINE
 		}
 	} else {
-		if c.status == ricochet.Contact_ONLINE {
-			c.status = ricochet.Contact_OFFLINE
+		if c.data.Status == ricochet.Contact_ONLINE {
+			c.data.Status = ricochet.Contact_OFFLINE
 		}
 	}
 
 	// Update LastConnected time
 	c.timeConnected = time.Now()
-
-	config := c.core.Config.OpenWrite()
 	c.data.LastConnected = c.timeConnected.Format(time.RFC3339)
-	config.Contacts[strconv.Itoa(c.id)] = c.data
-	config.Save()
 
+	config := c.core.Config.Lock()
+	config.Contacts[strconv.Itoa(c.id)] = c.data
+	c.core.Config.Unlock()
+
+	// XXX I wonder if events and config updates can be combined now, and made safer...
 	// _really_ assumes c.mutex was held
 	c.mutex.Unlock()
 	event := ricochet.ContactEvent{
@@ -615,7 +594,7 @@ func (c *Contact) UpdateContactRequest(status string) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if !c.data.Request.Pending {
+	if c.data.Request == nil {
 		return false
 	}
 
@@ -635,7 +614,6 @@ func (c *Contact) UpdateContactRequest(status string) bool {
 // Same as above, but assumes the mutex is already held and that the caller
 // will send an UPDATE event
 func (c *Contact) updateContactRequest(status string) bool {
-	config := c.core.Config.OpenWrite()
 	now := time.Now().Format(time.RFC3339)
 	// Whether to keep the channel open
 	var re bool
@@ -646,11 +624,11 @@ func (c *Contact) updateContactRequest(status string) bool {
 		re = true
 
 	case "Accepted":
-		c.data.Request = ConfigContactRequest{}
+		c.data.Request = nil
 		if c.connection != nil {
-			c.status = ricochet.Contact_ONLINE
+			c.data.Status = ricochet.Contact_ONLINE
 		} else {
-			c.status = ricochet.Contact_UNKNOWN
+			c.data.Status = ricochet.Contact_UNKNOWN
 		}
 
 	case "Rejected":
@@ -664,8 +642,9 @@ func (c *Contact) updateContactRequest(status string) bool {
 		log.Printf("Unknown contact request status '%s'", status)
 	}
 
+	config := c.core.Config.Lock()
+	defer c.core.Config.Unlock()
 	config.Contacts[strconv.Itoa(c.id)] = c.data
-	config.Save()
 	return re
 }
 

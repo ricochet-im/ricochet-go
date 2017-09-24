@@ -34,6 +34,9 @@ message ContactRequest {
     string fromNickname = 5;
     string whenCreated = 6;
     bool rejected = 7;
+    string whenDelivered = 8;
+    string whenRejected = 9;
+    string remoteError = 10;
 }
 
 message MonitorContactsRequest {

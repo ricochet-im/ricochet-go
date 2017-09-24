@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/chzyer/readline"
 	ricochet "github.com/ricochet-im/ricochet-go/core"
+	"github.com/ricochet-im/ricochet-go/core/config"
 	rpc "github.com/ricochet-im/ricochet-go/rpc"
 	"google.golang.org/grpc"
 	"log"
@@ -175,13 +176,16 @@ func checkBackendAddressSafety(address string) error {
 }
 
 func startBackend() error {
-	config, err := ricochet.LoadConfig(configPath)
+	cfg, err := config.LoadConfigFile(configPath)
+	if err != nil && os.IsNotExist(err) {
+		cfg, err = config.NewConfigFile(configPath)
+	}
 	if err != nil {
 		return err
 	}
 
 	core := new(ricochet.Ricochet)
-	if err := core.Init(config); err != nil {
+	if err := core.Init(cfg); err != nil {
 		return err
 	}
 

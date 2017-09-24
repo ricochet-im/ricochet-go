@@ -2,9 +2,9 @@ package core
 
 import (
 	"crypto/rsa"
-	"encoding/base64"
 	"errors"
 	"github.com/ricochet-im/ricochet-go/core/utils"
+	"github.com/ricochet-im/ricochet-go/rpc"
 	protocol "github.com/s-rah/go-ricochet"
 	connection "github.com/s-rah/go-ricochet/connection"
 	"github.com/yawning/bulb/utils/pkcs1"
@@ -51,15 +51,10 @@ func CreateIdentity(core *Ricochet) (*Identity, error) {
 }
 
 func (me *Identity) loadIdentity() error {
-	config := me.core.Config.OpenRead()
-	defer config.Close()
+	config := me.core.Config.Read()
 
-	if config.Identity.ServiceKey != "" {
-		keyData, err := base64.StdEncoding.DecodeString(config.Identity.ServiceKey)
-		if err != nil {
-			return err
-		}
-
+	if keyData := config.Secrets.GetServicePrivateKey(); keyData != nil {
+		var err error
 		me.privateKey, _, err = pkcs1.DecodePrivateKeyDER(keyData)
 		if err != nil {
 			return err
@@ -90,9 +85,12 @@ func (me *Identity) setPrivateKey(key *rsa.PrivateKey) error {
 	if err != nil {
 		return err
 	}
-	config := me.core.Config.OpenWrite()
-	config.Identity.ServiceKey = base64.StdEncoding.EncodeToString(keyData)
-	config.Save()
+	config := me.core.Config.Lock()
+	if config.Secrets == nil {
+		config.Secrets = &ricochet.Secrets{}
+	}
+	config.Secrets.ServicePrivateKey = keyData
+	me.core.Config.Unlock()
 
 	// Update Identity
 	me.address, err = AddressFromKey(&key.PublicKey)

@@ -1,0 +1,17 @@
+syntax = "proto3";
+package ricochet;
+
+import "contact.proto";
+import "identity.proto";
+
+message Config {
+    Identity identity = 1;
+    map<string, Contact> contacts = 2;
+    Secrets secrets = 3;
+}
+
+// Secrets are not transmitted to frontend RPC clients
+message Secrets {
+    bytes servicePrivateKey = 1;
+}
+

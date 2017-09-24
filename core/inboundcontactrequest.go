@@ -266,13 +266,12 @@ func (cr *InboundContactRequest) Accept() (*Contact, error) {
 
 	log.Printf("Accepting contact request from %s", cr.data.Address)
 
-	onion, _ := OnionFromAddress(cr.data.Address)
-	configContact := ConfigContact{
-		Hostname:    onion,
+	data := &ricochet.Contact{
+		Address:     cr.data.Address,
 		Nickname:    cr.data.FromNickname,
 		WhenCreated: cr.data.WhenCreated,
 	}
-	contact, err := cr.core.Identity.ContactList().AddNewContact(configContact)
+	contact, err := cr.core.Identity.ContactList().AddNewContact(data)
 	if err != nil {
 		log.Printf("Error occurred in accepting contact request: %s", err)
 		return nil, err

@@ -27,9 +27,7 @@ func LoadContactList(core *Ricochet) (*ContactList, error) {
 		inboundRequests: make(map[string]*InboundContactRequest),
 	}
 
-	config := core.Config.OpenRead()
-	defer config.Close()
-
+	config := core.Config.Read()
 	list.contacts = make(map[int]*Contact, len(config.Contacts))
 	for idStr, data := range config.Contacts {
 		id, err := strconv.Atoi(idStr)
@@ -99,20 +97,15 @@ func (cl *ContactList) InboundRequestByAddress(address string) *InboundContactRe
 // Generally, you will use AddContactRequest (for outbound requests) and
 // AddOrUpdateInboundContactRequest plus InboundContactRequest.Accept() instead of
 // using this function directly.
-func (this *ContactList) AddNewContact(configContact ConfigContact) (*Contact, error) {
+func (this *ContactList) AddNewContact(data *ricochet.Contact) (*Contact, error) {
 	this.mutex.Lock()
 	defer this.mutex.Unlock()
 
-	address, ok := AddressFromOnion(configContact.Hostname)
-	if !ok {
-		return nil, errors.New("Invalid ricochet address")
-	}
-
 	for _, contact := range this.contacts {
-		if contact.Address() == address {
+		if contact.Address() == data.Address {
 			return nil, errors.New("Contact already exists with this address")
 		}
-		if contact.Nickname() == configContact.Nickname {
+		if contact.Nickname() == data.Nickname {
 			return nil, errors.New("Contact already exists with this nickname")
 		}
 	}
@@ -120,7 +113,7 @@ func (this *ContactList) AddNewContact(configContact ConfigContact) (*Contact, e
 	// XXX check inbound requests (but this can be called for an inbound req too)
 
 	// Write new contact into config
-	config := this.core.Config.OpenWrite()
+	config := this.core.Config.Lock()
 
 	maxContactId := 0
 	for idstr, _ := range config.Contacts {
@@ -132,13 +125,15 @@ func (this *ContactList) AddNewContact(configContact ConfigContact) (*Contact, e
 	}
 
 	contactId := maxContactId + 1
-	config.Contacts[strconv.Itoa(contactId)] = configContact
-	if err := config.Save(); err != nil {
-		return nil, err
+
+	if config.Contacts == nil {
+		config.Contacts = make(map[string]*ricochet.Contact)
 	}
+	config.Contacts[strconv.Itoa(contactId)] = data
+	this.core.Config.Unlock()
 
 	// Create Contact
-	contact, err := ContactFromConfig(this.core, contactId, configContact, this.events)
+	contact, err := ContactFromConfig(this.core, contactId, data, this.events)
 	if err != nil {
 		return nil, err
 	}
@@ -163,8 +158,7 @@ func (this *ContactList) AddNewContact(configContact ConfigContact) (*Contact, e
 // If an inbound request already exists for this address, that request will be automatically
 // accepted, and the returned contact will already be fully established.
 func (cl *ContactList) AddContactRequest(address, name, fromName, text string) (*Contact, error) {
-	onion, valid := OnionFromAddress(address)
-	if !valid {
+	if !IsAddressValid(address) {
 		return nil, errors.New("Invalid ricochet address")
 	}
 	if !IsNicknameAcceptable(name) {
@@ -177,17 +171,20 @@ func (cl *ContactList) AddContactRequest(address, name, fromName, text string) (
 		return nil, errors.New("Invalid message")
 	}
 
-	configContact := ConfigContact{
-		Hostname:    onion,
+	data := &ricochet.Contact{
+		Address:     address,
 		Nickname:    name,
 		WhenCreated: time.Now().Format(time.RFC3339),
-		Request: ConfigContactRequest{
-			Pending:    true,
-			MyNickname: fromName,
-			Message:    text,
+		Request: &ricochet.ContactRequest{
+			Direction:    ricochet.ContactRequest_OUTBOUND,
+			Address:      address,
+			Nickname:     name,
+			FromNickname: fromName,
+			Text:         text,
+			WhenCreated:  time.Now().Format(time.RFC3339),
 		},
 	}
-	contact, err := cl.AddNewContact(configContact)
+	contact, err := cl.AddNewContact(data)
 	if err != nil {
 		return nil, err
 	}
@@ -213,11 +210,9 @@ func (this *ContactList) RemoveContact(contact *Contact) error {
 	// leaves a goroutine up among other things.
 	contact.StopConnection()
 
-	config := this.core.Config.OpenWrite()
+	config := this.core.Config.Lock()
 	delete(config.Contacts, strconv.Itoa(contact.Id()))
-	if err := config.Save(); err != nil {
-		return err
-	}
+	this.core.Config.Unlock()
 
 	delete(this.contacts, contact.Id())
 

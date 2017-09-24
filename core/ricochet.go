@@ -2,6 +2,7 @@ package core
 
 import (
 	cryptorand "crypto/rand"
+	"github.com/ricochet-im/ricochet-go/core/config"
 	"log"
 	"math"
 	"math/big"
@@ -11,12 +12,12 @@ import (
 )
 
 type Ricochet struct {
-	Config   *Config
+	Config   *config.ConfigFile
 	Network  *Network
 	Identity *Identity
 }
 
-func (core *Ricochet) Init(conf *Config) (err error) {
+func (core *Ricochet) Init(conf *config.ConfigFile) (err error) {
 	initRand()
 
 	core.Config = conf
