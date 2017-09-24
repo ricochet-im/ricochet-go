@@ -25,7 +25,7 @@ var (
 	unsafeBackend  bool
 	backendMode    bool
 	connectAuto    bool
-	configPath     string = "identity.ricochet"
+	configPath     string = "identity.json"
 	torAddress     string
 	torPassword    string
 )
@@ -33,7 +33,7 @@ var (
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage:\n")
-		fmt.Fprintf(os.Stderr, "  %s [<args>] [<identity>]\n\tStandalone client using <identity> (default \"./identity.ricochet\")\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s [<args>] [<identity>]\n\tStandalone client using <identity> (default \"./%s\")\n", os.Args[0], configPath)
 		fmt.Fprintf(os.Stderr, "  %s -listen <address> [<args>] [<identity>]\n\tListen on <address> for Ricochet client frontend connections\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s -attach <address> [<args>]\n\tAttach to a client backend running on <address>\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\nArgs:\n")
@@ -63,9 +63,6 @@ func main() {
 			os.Exit(1)
 		} else if backendServer != "" {
 			fmt.Printf("Cannot use -listen with -attach, because attach implies not running a backend\n")
-			os.Exit(1)
-		} else if configPath != "identity.ricochet" {
-			fmt.Printf("Cannot use -identity with -attach, because identity is stored at the backend\n")
 			os.Exit(1)
 		} else if torAddress != "" || torPassword != "" {
 			fmt.Printf("Cannot use -tor-control with -attach, because tor connections happen on the backend\n")
