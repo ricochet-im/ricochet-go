@@ -8,7 +8,6 @@ import (
 	"github.com/ricochet-im/ricochet-go/rpc"
 	"golang.org/x/net/context"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -227,20 +226,15 @@ func (ui *UI) AddContact(params []string) {
 		return
 	}
 
-	fmt.Fprintf(ui.Stdout, "Added contact \x1b[1m%s\x1b[0m (\x1b[1m%d\x1b[0m)\n", contact.Nickname, contact.Id)
+	fmt.Fprintf(ui.Stdout, "Added contact \x1b[1m%s\x1b[0m (\x1b[1m%s\x1b[0m)\n", contact.Nickname, contact.Address)
 }
 
 func (ui *UI) DeleteContact(params []string) {
 	if len(params) < 1 {
-		fmt.Fprintf(ui.Stdout, "Usage: delete-contact [id]\n")
+		fmt.Fprintf(ui.Stdout, "Usage: delete-contact [address]\n")
 		return
 	}
-	id, err := strconv.Atoi(params[0])
-	if err != nil {
-		fmt.Fprintf(ui.Stdout, "Invalid contact id '%s'\n", params[0])
-		return
-	}
-	contact := ui.Client.Contacts.ById(int32(id))
+	contact := ui.Client.Contacts.ByAddress(params[0])
 	if contact == nil {
 		contact = ui.ContactByPrefix(params[0])
 	}
@@ -261,10 +255,7 @@ func (ui *UI) DeleteContact(params []string) {
 	}
 
 	_, err = ui.Client.Backend.DeleteContact(context.Background(),
-		&ricochet.DeleteContactRequest{
-			Id:      contact.Data.Id,
-			Address: contact.Data.Address,
-		})
+		&ricochet.DeleteContactRequest{Address: contact.Data.Address})
 	if err != nil {
 		fmt.Fprintf(ui.Stdout, "Failed: %s\n", err)
 		return

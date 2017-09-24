@@ -35,12 +35,9 @@ type Conversation struct {
 // conversation backlog. Blocking API call.
 func (c *Conversation) SendMessage(text string) error {
 	msg, err := c.Client.Backend.SendMessage(context.Background(), &ricochet.Message{
-		Sender: &ricochet.Entity{IsSelf: true},
-		Recipient: &ricochet.Entity{
-			ContactId: c.Contact.Data.Id,
-			Address:   c.Contact.Data.Address,
-		},
-		Text: text,
+		Sender:    &ricochet.Entity{IsSelf: true},
+		Recipient: &ricochet.Entity{Address: c.Contact.Data.Address},
+		Text:      text,
 	})
 	if err != nil {
 		fmt.Fprintf(Ui.Stdout, "send message error: %v\n", err)
@@ -213,13 +210,12 @@ func (c *Conversation) validateMessage(msg *ricochet.Message) error {
 		remoteEntity = msg.Sender
 	}
 
-	if !localEntity.IsSelf || localEntity.ContactId != 0 ||
+	if !localEntity.IsSelf ||
 		(len(localEntity.Address) > 0 && localEntity.Address != c.Client.Identity.Address) {
 		return fmt.Errorf("Invalid self entity on message: %v", localEntity)
 	}
 
-	if remoteEntity.IsSelf || remoteEntity.ContactId != c.Contact.Data.Id ||
-		remoteEntity.Address != c.Contact.Data.Address {
+	if remoteEntity.IsSelf || remoteEntity.Address != c.Contact.Data.Address {
 		return fmt.Errorf("Invalid remote entity on message: %v", remoteEntity)
 	}
 

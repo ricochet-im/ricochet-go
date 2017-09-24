@@ -211,7 +211,7 @@ func (c *Client) onContactEvent(event *ricochet.ContactEvent) {
 			return
 		}
 
-		contact := c.Contacts.ByIdAndAddress(data.Id, data.Address)
+		contact := c.Contacts.ByAddress(data.Address)
 		if contact == nil {
 			log.Printf("Ignoring contact update event for unknown contact: %v", data)
 		} else {
@@ -257,7 +257,7 @@ func (c *Client) onConversationEvent(event *ricochet.ConversationEvent) {
 		remoteEntity = message.Recipient
 	}
 
-	remoteContact := c.Contacts.ByIdAndAddress(remoteEntity.ContactId, remoteEntity.Address)
+	remoteContact := c.Contacts.ByAddress(remoteEntity.Address)
 	if remoteContact == nil {
 		log.Printf("Ignoring conversation event with unknown contact: %v", event)
 		return

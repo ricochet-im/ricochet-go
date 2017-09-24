@@ -1,11 +1,7 @@
 syntax = "proto3";
 package ricochet;
 
-// XXX Using integer contact IDs seems dangerous, and it's especially a
-// problem that 0 is a valid contact ID. Switch to UUID? Or use address?
-
 message Contact {
-    int32 id = 1;
     string address = 2;
     string nickname = 3;
     string whenCreated = 4;
@@ -62,8 +58,7 @@ message AddContactReply {
 }
 
 message DeleteContactRequest {
-    int32 id = 1;
-    string address = 2;
+    string address = 1;
 }
 
 message DeleteContactReply {

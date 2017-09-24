@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/ricochet-im/ricochet-go/core/utils"
 	"github.com/ricochet-im/ricochet-go/rpc"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -16,7 +15,7 @@ type ContactList struct {
 	mutex  sync.RWMutex
 	events *utils.Publisher
 
-	contacts        map[int]*Contact
+	contacts        map[string]*Contact
 	inboundRequests map[string]*InboundContactRequest
 }
 
@@ -28,21 +27,20 @@ func LoadContactList(core *Ricochet) (*ContactList, error) {
 	}
 
 	config := core.Config.Read()
-	list.contacts = make(map[int]*Contact, len(config.Contacts))
-	for idStr, data := range config.Contacts {
-		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			return nil, fmt.Errorf("Invalid contact id '%s'", idStr)
+	list.contacts = make(map[string]*Contact, len(config.Contacts))
+	for addr, data := range config.Contacts {
+		if _, exists := list.contacts[addr]; exists {
+			return nil, fmt.Errorf("Duplicate contact %s", addr)
 		}
-		if _, exists := list.contacts[id]; exists {
-			return nil, fmt.Errorf("Duplicate contact id '%d'", id)
+		if addr != data.Address {
+			return nil, fmt.Errorf("Contact address/key do not match ('%s' and '%s')", addr, data.Address)
 		}
 
-		contact, err := ContactFromConfig(core, id, data, list.events)
+		contact, err := ContactFromConfig(core, data, list.events)
 		if err != nil {
 			return nil, err
 		}
-		list.contacts[id] = contact
+		list.contacts[addr] = contact
 	}
 
 	return list, nil
@@ -62,32 +60,16 @@ func (this *ContactList) Contacts() []*Contact {
 	return re
 }
 
-func (this *ContactList) ContactById(id int) *Contact {
-	this.mutex.RLock()
-	defer this.mutex.RUnlock()
-	return this.contacts[id]
-}
-
-func (this *ContactList) ContactByAddress(address string) *Contact {
-	this.mutex.RLock()
-	defer this.mutex.RUnlock()
-	for _, contact := range this.contacts {
-		if contact.Address() == address {
-			return contact
-		}
-	}
-	return nil
+func (cl *ContactList) ContactByAddress(address string) *Contact {
+	cl.mutex.RLock()
+	defer cl.mutex.RUnlock()
+	return cl.contacts[address]
 }
 
 func (cl *ContactList) InboundRequestByAddress(address string) *InboundContactRequest {
 	cl.mutex.RLock()
 	defer cl.mutex.RUnlock()
-	for _, request := range cl.inboundRequests {
-		if request.Address == address {
-			return request
-		}
-	}
-	return nil
+	return cl.inboundRequests[address]
 }
 
 // AddNewContact adds a new contact to the persistent contact list, broadcasts a
@@ -101,10 +83,10 @@ func (this *ContactList) AddNewContact(data *ricochet.Contact) (*Contact, error)
 	this.mutex.Lock()
 	defer this.mutex.Unlock()
 
+	if this.contacts[data.Address] != nil {
+		return nil, errors.New("Contact already exists with this address")
+	}
 	for _, contact := range this.contacts {
-		if contact.Address() == data.Address {
-			return nil, errors.New("Contact already exists with this address")
-		}
 		if contact.Nickname() == data.Nickname {
 			return nil, errors.New("Contact already exists with this nickname")
 		}
@@ -114,30 +96,18 @@ func (this *ContactList) AddNewContact(data *ricochet.Contact) (*Contact, error)
 
 	// Write new contact into config
 	config := this.core.Config.Lock()
-
-	maxContactId := 0
-	for idstr, _ := range config.Contacts {
-		if id, err := strconv.Atoi(idstr); err == nil {
-			if maxContactId < id {
-				maxContactId = id
-			}
-		}
-	}
-
-	contactId := maxContactId + 1
-
 	if config.Contacts == nil {
 		config.Contacts = make(map[string]*ricochet.Contact)
 	}
-	config.Contacts[strconv.Itoa(contactId)] = data
+	config.Contacts[data.Address] = data
 	this.core.Config.Unlock()
 
 	// Create Contact
-	contact, err := ContactFromConfig(this.core, contactId, data, this.events)
+	contact, err := ContactFromConfig(this.core, data, this.events)
 	if err != nil {
 		return nil, err
 	}
-	this.contacts[contactId] = contact
+	this.contacts[data.Address] = contact
 
 	event := ricochet.ContactEvent{
 		Type: ricochet.ContactEvent_ADD,
@@ -201,7 +171,8 @@ func (this *ContactList) RemoveContact(contact *Contact) error {
 	this.mutex.Lock()
 	defer this.mutex.Unlock()
 
-	if this.contacts[contact.Id()] != contact {
+	address := contact.Address()
+	if this.contacts[address] != contact {
 		return errors.New("Not in contact list")
 	}
 
@@ -211,17 +182,16 @@ func (this *ContactList) RemoveContact(contact *Contact) error {
 	contact.StopConnection()
 
 	config := this.core.Config.Lock()
-	delete(config.Contacts, strconv.Itoa(contact.Id()))
+	delete(config.Contacts, address)
 	this.core.Config.Unlock()
 
-	delete(this.contacts, contact.Id())
+	delete(this.contacts, address)
 
 	event := ricochet.ContactEvent{
 		Type: ricochet.ContactEvent_DELETE,
 		Subject: &ricochet.ContactEvent_Contact{
 			Contact: &ricochet.Contact{
-				Id:      int32(contact.Id()),
-				Address: contact.Address(),
+				Address: address,
 			},
 		},
 	}

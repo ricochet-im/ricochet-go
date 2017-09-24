@@ -10,7 +10,6 @@ import (
 	connection "github.com/s-rah/go-ricochet/connection"
 	"golang.org/x/net/context"
 	"log"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -18,7 +17,6 @@ import (
 type Contact struct {
 	core *Ricochet
 
-	id   int
 	data *ricochet.Contact
 
 	mutex  sync.Mutex
@@ -35,19 +33,16 @@ type Contact struct {
 	conversation *Conversation
 }
 
-func ContactFromConfig(core *Ricochet, id int, data *ricochet.Contact, events *utils.Publisher) (*Contact, error) {
+func ContactFromConfig(core *Ricochet, data *ricochet.Contact, events *utils.Publisher) (*Contact, error) {
 	contact := &Contact{
 		core:              core,
-		id:                id,
 		data:              data,
 		events:            events,
 		connChannel:       make(chan *connection.Connection),
 		connEnabledSignal: make(chan bool),
 	}
 
-	if id < 0 {
-		return nil, fmt.Errorf("Invalid contact ID '%d'", id)
-	} else if !IsAddressValid(data.Address) {
+	if !IsAddressValid(data.Address) {
 		return nil, fmt.Errorf("Invalid contact address '%s", data.Address)
 	}
 
@@ -62,10 +57,6 @@ func ContactFromConfig(core *Ricochet, id int, data *ricochet.Contact, events *u
 	}
 
 	return contact, nil
-}
-
-func (c *Contact) Id() int {
-	return c.id
 }
 
 func (c *Contact) Nickname() string {
@@ -124,8 +115,7 @@ func (c *Contact) Conversation() *Conversation {
 	defer c.mutex.Unlock()
 	if c.conversation == nil {
 		entity := &ricochet.Entity{
-			ContactId: int32(c.id),
-			Address:   c.data.Address,
+			Address: c.data.Address,
 		}
 		c.conversation = NewConversation(c, entity, c.core.Identity.ConversationStream)
 	}
@@ -536,7 +526,7 @@ func (c *Contact) onConnectionStateChanged() {
 	c.data.LastConnected = c.timeConnected.Format(time.RFC3339)
 
 	config := c.core.Config.Lock()
-	config.Contacts[strconv.Itoa(c.id)] = c.data
+	config.Contacts[c.data.Address] = c.data
 	c.core.Config.Unlock()
 
 	// XXX I wonder if events and config updates can be combined now, and made safer...
@@ -644,7 +634,7 @@ func (c *Contact) updateContactRequest(status string) bool {
 
 	config := c.core.Config.Lock()
 	defer c.core.Config.Unlock()
-	config.Contacts[strconv.Itoa(c.id)] = c.data
+	config.Contacts[c.data.Address] = c.data
 	return re
 }
 

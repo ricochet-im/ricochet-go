@@ -139,7 +139,7 @@ func (s *RpcServer) UpdateContact(ctx context.Context, req *ricochet.Contact) (*
 func (s *RpcServer) DeleteContact(ctx context.Context, req *ricochet.DeleteContactRequest) (*ricochet.DeleteContactReply, error) {
 	contactList := s.Core.Identity.ContactList()
 	contact := contactList.ContactByAddress(req.Address)
-	if contact == nil || (req.Id != 0 && contact.Id() != int(req.Id)) {
+	if contact == nil {
 		return nil, errors.New("Contact not found")
 	}
 
@@ -239,7 +239,7 @@ func (s *RpcServer) SendMessage(ctx context.Context, req *ricochet.Message) (*ri
 	}
 
 	contact := s.Core.Identity.ContactList().ContactByAddress(req.Recipient.Address)
-	if contact == nil || (req.Recipient.ContactId != 0 && int32(contact.Id()) != req.Recipient.ContactId) {
+	if contact == nil {
 		return nil, errors.New("Unknown recipient")
 	}
 
@@ -261,7 +261,7 @@ func (s *RpcServer) MarkConversationRead(ctx context.Context, req *ricochet.Mark
 	}
 
 	contact := s.Core.Identity.ContactList().ContactByAddress(req.Entity.Address)
-	if contact == nil || (req.Entity.ContactId != 0 && int32(contact.Id()) != req.Entity.ContactId) {
+	if contact == nil {
 		return nil, errors.New("Unknown entity")
 	}
 

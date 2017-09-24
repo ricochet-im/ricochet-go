@@ -18,8 +18,7 @@ message MonitorConversationsRequest {
 }
 
 message Entity {
-    // contactId and address MAY be unspecified for self
-    int32 contactId = 1;
+    // address MAY be unspecified for self
     string address = 2;
     bool isSelf = 3;
 }
