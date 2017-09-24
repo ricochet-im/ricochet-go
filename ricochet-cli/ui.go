@@ -4,12 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"github.com/chzyer/readline"
+	"github.com/ricochet-im/ricochet-go/core"
 	"github.com/ricochet-im/ricochet-go/rpc"
 	"golang.org/x/net/context"
 	"io"
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	MinContactPrefix = 3
 )
 
 var Ui UI
@@ -61,16 +66,6 @@ func (ui *UI) Execute(line string) error {
 	}
 
 	words := strings.SplitN(line, " ", 2)
-	if id, err := strconv.Atoi(words[0]); err == nil {
-		contact := ui.Client.Contacts.ById(int32(id))
-		if contact != nil {
-			ui.SetCurrentContact(contact)
-		} else {
-			fmt.Fprintf(ui.Stdout, "no contact %d\n", id)
-		}
-		return nil
-	}
-
 	switch words[0] {
 	case "clear":
 		readline.ClearScreen(readline.Stdout)
@@ -113,13 +108,22 @@ func (ui *UI) Execute(line string) error {
 		ui.SetCurrentContact(nil)
 
 	case "help":
-		fallthrough
+		ui.printHelp()
 
 	default:
-		fmt.Fprintf(ui.Stdout, "Commands: clear, quit, status, connect, disconnect, contacts, add-contact, delete-contact, log, close, help\n")
+		contact := ui.ContactByPrefix(line)
+		if contact != nil {
+			ui.SetCurrentContact(contact)
+		} else {
+			ui.printHelp()
+		}
 	}
 
 	return nil
+}
+
+func (ui *UI) printHelp() {
+	fmt.Fprintf(ui.Stdout, "Commands: clear, quit, status, connect, disconnect, contacts, add-contact, delete-contact, log, close, help\n")
 }
 
 func (ui *UI) PrintStatus() {
@@ -173,9 +177,9 @@ func (ui *UI) ListContacts() {
 		for _, contact := range contacts {
 			unreadCount := contact.Conversation.UnreadCount()
 			if unreadCount > 0 {
-				fmt.Fprintf(ui.Stdout, "    \x1b[1m%s\x1b[0m (\x1b[1m%d\x1b[0m) -- \x1b[34;1m%d new messages\x1b[0m\n", contact.Data.Nickname, contact.Data.Id, unreadCount)
+				fmt.Fprintf(ui.Stdout, "    \x1b[1m%s\x1b[0m (\x1b[1m%s\x1b[0m) -- \x1b[34;1m%d new messages\x1b[0m\n", contact.Data.Nickname, ui.PrefixForContact(contact), unreadCount)
 			} else {
-				fmt.Fprintf(ui.Stdout, "    %s (\x1b[1m%d\x1b[0m)\n", contact.Data.Nickname, contact.Data.Id)
+				fmt.Fprintf(ui.Stdout, "    %s (\x1b[1m%s\x1b[0m)\n", contact.Data.Nickname, ui.PrefixForContact(contact))
 			}
 		}
 	}
@@ -238,7 +242,10 @@ func (ui *UI) DeleteContact(params []string) {
 	}
 	contact := ui.Client.Contacts.ById(int32(id))
 	if contact == nil {
-		fmt.Fprintf(ui.Stdout, "No contact with id %d\n", id)
+		contact = ui.ContactByPrefix(params[0])
+	}
+	if contact == nil {
+		fmt.Fprintf(ui.Stdout, "No contact with address %s\n", params[0])
 		return
 	}
 
@@ -388,6 +395,41 @@ func ColoredContactStatus(status ricochet.Contact_Status) string {
 	default:
 		return status.String()
 	}
+}
+
+func (ui *UI) ContactByPrefix(prefix string) *Contact {
+	if len(prefix) < MinContactPrefix {
+		return nil
+	}
+	var contact *Contact
+	for _, c := range ui.Client.Contacts.Contacts {
+		host, _ := core.PlainHostFromAddress(c.Data.Address)
+		if prefix == host[:len(prefix)] {
+			if contact != nil {
+				// Ambiguous prefix
+				return nil
+			}
+			contact = c
+		}
+	}
+	return contact
+}
+
+func (ui *UI) PrefixForContact(contact *Contact) string {
+	host, _ := core.PlainHostFromAddress(contact.Data.Address)
+	prefix := host[:MinContactPrefix]
+
+	for _, c := range ui.Client.Contacts.Contacts {
+		if c == contact {
+			continue
+		}
+		cHost, _ := core.PlainHostFromAddress(c.Data.Address)
+		for prefix == cHost[:len(prefix)] && len(prefix) < len(host) {
+			prefix = host[:len(prefix)+1]
+		}
+	}
+
+	return prefix
 }
 
 func (ui *UI) SetCurrentContact(contact *Contact) {

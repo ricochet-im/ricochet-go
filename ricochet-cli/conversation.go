@@ -247,7 +247,7 @@ func (c *Conversation) printMessage(msg *ricochet.Message) {
 		if c.numUnread > 1 {
 			messages += "s"
 		}
-		fmt.Fprintf(Ui.Stdout, "\r\x1b[31m[[ \x1b[1;34m%s\x1b[0m from \x1b[1m%s\x1b[0m (\x1b[1m%d\x1b[0m) \x1b[31m]]\x1b[39m\n", messages, c.Contact.Data.Nickname, c.Contact.Data.Id)
+		fmt.Fprintf(Ui.Stdout, "\r\x1b[31m[[ \x1b[1;34m%s\x1b[0m from \x1b[1m%s\x1b[0m (\x1b[1m%s\x1b[0m) \x1b[31m]]\x1b[39m\n", messages, c.Contact.Data.Nickname, Ui.PrefixForContact(c.Contact))
 		return
 	}
 
