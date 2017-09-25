@@ -60,7 +60,7 @@ func (rai *RicochetApplicationInstance) ChatMessage(messageID uint32, when time.
 	return true
 }
 
-func (rai *RicochetApplicationInstance) ChatMessageAck(messageID uint32) {
+func (rai *RicochetApplicationInstance) ChatMessageAck(messageID uint32, accepted bool) {
 	rai.ChatMessageAckHandler(rai, messageID)
 }
 

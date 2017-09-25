@@ -35,22 +35,34 @@ type ChatChannelHandler interface {
 	// the message successfully, and false to NACK and refuse the message.
 	ChatMessage(messageID uint32, when time.Time, message string) bool
 	// ChatMessageAck is called when an acknowledgement of a sent message is received.
-	ChatMessageAck(messageID uint32)
+	ChatMessageAck(messageID uint32, accepted bool)
 }
 
-// SendMessage sends a given message using this channe
-func (cc *ChatChannel) SendMessage(message string) {
+// SendMessage sends a given message using this channel, and returns the
+// messageID, which will be used in ChatMessageAck when the peer acknowledges
+// this message.
+func (cc *ChatChannel) SendMessage(message string) uint32 {
+	return cc.SendMessageWithTime(message, time.Now())
+}
+
+// SendMessageWithTime is identical to SendMessage, but also sends the provided time.Time
+// as a rough timestamp for when this message was originally sent. This should be used
+// when retrying or sending queued messages.
+func (cc *ChatChannel) SendMessageWithTime(message string, when time.Time) uint32 {
+	delta := time.Now().Sub(when) / time.Second
 	messageBuilder := new(utils.MessageBuilder)
-	//TODO Implement Chat Number
-	data := messageBuilder.ChatMessage(message, cc.lastMessageID)
+	messageID := cc.lastMessageID
 	cc.lastMessageID++
+	data := messageBuilder.ChatMessage(message, messageID, int64(delta))
 	cc.channel.SendMessage(data)
+	return messageID
 }
 
-// Acknowledge indicates the given messageID was received
-func (cc *ChatChannel) Acknowledge(messageID uint32) {
+// Acknowledge indicates that the given messageID was received, and whether
+// it was accepted.
+func (cc *ChatChannel) Acknowledge(messageID uint32, accepted bool) {
 	messageBuilder := new(utils.MessageBuilder)
-	cc.channel.SendMessage(messageBuilder.AckChatMessage(messageID))
+	cc.channel.SendMessage(messageBuilder.AckChatMessage(messageID, accepted))
 }
 
 // Type returns the type string for this channel, e.g. "im.ricochet.chat".
@@ -132,13 +144,9 @@ func (cc *ChatChannel) Packet(data []byte) {
 		if err == nil {
 			if res.GetChatMessage() != nil {
 				ack := cc.Handler.ChatMessage(res.GetChatMessage().GetMessageId(), time.Now(), res.GetChatMessage().GetMessageText())
-				if ack {
-					cc.Acknowledge(res.GetChatMessage().GetMessageId())
-				} else {
-					//XXX
-				}
-			} else if res.GetChatAcknowledge() != nil {
-				cc.Handler.ChatMessageAck(res.GetChatMessage().GetMessageId())
+				cc.Acknowledge(res.GetChatMessage().GetMessageId(), ack)
+			} else if ack := res.GetChatAcknowledge(); ack != nil {
+				cc.Handler.ChatMessageAck(ack.GetMessageId(), ack.GetAccepted())
 			}
 			// XXX?
 		}

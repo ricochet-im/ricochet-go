@@ -32,7 +32,7 @@ func (echobot *RicochetEchoBot) ChatMessage(messageID uint32, when time.Time, me
 	return true
 }
 
-func (echobot *RicochetEchoBot) ChatMessageAck(messageID uint32) {
+func (echobot *RicochetEchoBot) ChatMessageAck(messageID uint32, accepted bool) {
 
 }
 

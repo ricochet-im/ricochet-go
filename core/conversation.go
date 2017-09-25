@@ -136,9 +136,7 @@ func (c *Conversation) Send(text string) (*ricochet.Message, error) {
 			message.Status = ricochet.Message_QUEUED
 		}
 	} else {
-		// XXX go-ricochet doesn't support message IDs & ack properly yet, so skip SENDING
-		//message.Status = ricochet.Message_SENDING
-		message.Status = ricochet.Message_DELIVERED
+		message.Status = ricochet.Message_SENDING
 	}
 
 	c.messages = append(c.messages, message)
@@ -177,9 +175,7 @@ func (c *Conversation) SendQueuedMessages() int {
 				break
 			}
 		} else {
-			// XXX go-ricochet doesn't support message IDs & ack properly yet, so skip SENDING
-			//message.Status = ricochet.Message_SENDING
-			message.Status = ricochet.Message_DELIVERED
+			message.Status = ricochet.Message_SENDING
 			sent++
 		}
 
@@ -229,11 +225,10 @@ func (c *Conversation) ChatMessage(messageID uint32, when time.Time, message str
 	return true
 }
 
-func (c *Conversation) ChatMessageAck(messageID uint32) {
-	// XXX no success field
-	log.Printf("chat ack: %d", messageID)
+func (c *Conversation) ChatMessageAck(messageID uint32, accepted bool) {
+	log.Printf("chat ack: %d %v", messageID, accepted)
 
-	c.UpdateSentStatus(uint64(messageID), true)
+	c.UpdateSentStatus(uint64(messageID), accepted)
 }
 
 func (c *Conversation) sendMessageToConnection(message *ricochet.Message) (connected bool, err error) {
@@ -259,8 +254,11 @@ func (c *Conversation) sendMessageToConnection(message *ricochet.Message) (conne
 			return errors.New("invalid chat channel")
 		}
 
-		// XXX message id and all of that
-		chat.SendMessage(message.Text)
+		// Set message.Timestamp now if unset
+		if message.Timestamp == 0 {
+			message.Timestamp = time.Now().Unix()
+		}
+		message.Identifier = uint64(chat.SendMessageWithTime(message.Text, time.Unix(message.Timestamp, 0)))
 		return nil
 	})
 

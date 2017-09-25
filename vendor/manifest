@@ -63,7 +63,7 @@
 			"importpath": "github.com/s-rah/go-ricochet",
 			"repository": "https://github.com/special/go-ricochet-protocol",
 			"vcs": "git",
-			"revision": "5b54d50bf4611a36c23dd732bd1e9d0dad441980",
+			"revision": "e5211eec18a2b58d379e232088154925439a74c0",
 			"branch": "api-rework-fixes",
 			"notests": true
 		},

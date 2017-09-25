@@ -195,10 +195,11 @@ func (mb *MessageBuilder) AuthResult(accepted bool, isKnownContact bool) []byte 
 }
 
 // ChatMessage constructs a chat message with the given content.
-func (mb *MessageBuilder) ChatMessage(message string, messageID uint32) []byte {
+func (mb *MessageBuilder) ChatMessage(message string, messageID uint32, timeDelta int64) []byte {
 	cm := &Protocol_Data_Chat.ChatMessage{
 		MessageId:   proto.Uint32(messageID),
 		MessageText: proto.String(message),
+		TimeDelta:   proto.Int64(timeDelta),
 	}
 	chatPacket := &Protocol_Data_Chat.Packet{
 		ChatMessage: cm,
@@ -209,10 +210,10 @@ func (mb *MessageBuilder) ChatMessage(message string, messageID uint32) []byte {
 }
 
 // AckChatMessage constructs a chat message acknowledgement.
-func (mb *MessageBuilder) AckChatMessage(messageID uint32) []byte {
+func (mb *MessageBuilder) AckChatMessage(messageID uint32, accepted bool) []byte {
 	cr := &Protocol_Data_Chat.ChatAcknowledge{
 		MessageId: proto.Uint32(messageID),
-		Accepted:  proto.Bool(true),
+		Accepted:  proto.Bool(accepted),
 	}
 	pc := &Protocol_Data_Chat.Packet{
 		ChatAcknowledge: cr,
