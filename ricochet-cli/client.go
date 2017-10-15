@@ -177,61 +177,59 @@ func (c *Client) onContactEvent(event *ricochet.ContactEvent) {
 	if !c.populatedContacts && event.Type != ricochet.ContactEvent_POPULATE {
 		log.Printf("Ignoring unexpected contact event during populate: %v", event)
 		return
+	} else if c.populatedContacts && event.Type == ricochet.ContactEvent_POPULATE {
+		log.Printf("Ignoring unexpected contact populate event: %v", event)
+		return
 	}
 
-	data := event.GetContact()
+	if cData := event.GetContact(); cData != nil {
+		switch event.Type {
+		case ricochet.ContactEvent_POPULATE:
+			c.Contacts.Populate(cData)
 
-	switch event.Type {
-	case ricochet.ContactEvent_POPULATE:
-		if c.populatedContacts {
-			log.Printf("Ignoring unexpected contact populate event: %v", event)
-		} else if event.Subject == nil {
-			// Populate is terminated by a nil subject
-			c.populatedContacts = true
-			log.Printf("Loaded %d contacts", len(c.Contacts.Contacts))
-			c.checkIfPopulated()
-			go c.monitorConversations()
-		} else if data != nil {
-			c.Contacts.Populate(data)
-		} else {
-			log.Printf("Invalid contact populate event: %v", event)
+		case ricochet.ContactEvent_ADD:
+			c.Contacts.Added(cData)
+
+		case ricochet.ContactEvent_UPDATE:
+			contact := c.Contacts.ByAddress(cData.Address)
+			if contact == nil {
+				log.Printf("Ignoring contact update event for unknown contact: %v", cData)
+			} else {
+				contact.Updated(cData)
+			}
+
+		case ricochet.ContactEvent_DELETE:
+			contact, _ := c.Contacts.Deleted(cData)
+			if Ui.CurrentContact == contact {
+				Ui.SetCurrentContact(nil)
+			}
+
+		default:
+			log.Printf("Ignoring unknown contact event: %v", event)
 		}
+	} else if reqData := event.GetRequest(); reqData != nil {
+		switch event.Type {
+		case ricochet.ContactEvent_POPULATE:
+			c.Contacts.Requests[reqData.Address] = reqData
+		case ricochet.ContactEvent_ADD:
+			fallthrough
+		case ricochet.ContactEvent_UPDATE:
+			c.Contacts.Requests[reqData.Address] = reqData
+			fmt.Fprintf(Ui.Stdout, "\r\x1b[31m[[\x1b[0m \x1b[1m%s\x1b[0m wants to be your contact. Type \x1b[1m%s\x1b[0m to respond \x1b[31m]]\x1b[39m\n", reqData.Address, Ui.PrefixForAddress(reqData.Address))
 
-	case ricochet.ContactEvent_ADD:
-		if data == nil {
-			log.Printf("Ignoring contact add event with null data")
-			return
+		case ricochet.ContactEvent_DELETE:
+			if c.Contacts.Requests[reqData.Address] != nil {
+				delete(c.Contacts.Requests, reqData.Address)
+			}
 		}
-
-		c.Contacts.Added(data)
-
-	case ricochet.ContactEvent_UPDATE:
-		if data == nil {
-			log.Printf("Ignoring contact update event with null data")
-			return
-		}
-
-		contact := c.Contacts.ByAddress(data.Address)
-		if contact == nil {
-			log.Printf("Ignoring contact update event for unknown contact: %v", data)
-		} else {
-			contact.Updated(data)
-		}
-
-	case ricochet.ContactEvent_DELETE:
-		if data == nil {
-			log.Printf("Ignoring contact delete event with null data")
-			return
-		}
-
-		contact, _ := c.Contacts.Deleted(data)
-
-		if Ui.CurrentContact == contact {
-			Ui.SetCurrentContact(nil)
-		}
-
-	default:
-		log.Printf("Ignoring unknown contact event: %v", event)
+	} else if event.Subject == nil && event.Type == ricochet.ContactEvent_POPULATE && !c.populatedContacts {
+		// Populate is terminated by a nil subject
+		c.populatedContacts = true
+		log.Printf("Loaded %d contacts and %d requests", len(c.Contacts.Contacts), len(c.Contacts.Requests))
+		c.checkIfPopulated()
+		go c.monitorConversations()
+	} else {
+		log.Printf("Ignoring event with an unexpected subject")
 	}
 }
 

@@ -110,9 +110,11 @@ func (ui *UI) Execute(line string) error {
 		ui.printHelp()
 
 	default:
-		contact := ui.ContactByPrefix(line)
+		contact, request := ui.EntityByPrefix(line)
 		if contact != nil {
 			ui.SetCurrentContact(contact)
+		} else if request != nil {
+			ui.ShowContactRequest(request)
 		} else {
 			ui.printHelp()
 		}
@@ -156,8 +158,26 @@ func (ui *UI) PrintStatus() {
 
 	fmt.Fprintf(ui.Stdout, "Your ricochet ID is %s\n", ui.Client.Identity.Address)
 
-	// no. contacts, contact reqs, online contacts
-	// unread messages
+	var nContacts, nOnline int
+	for _, contact := range ui.Client.Contacts.Contacts {
+		nContacts++
+		if contact.Data.Status == ricochet.Contact_ONLINE {
+			nOnline++
+		}
+	}
+	if nContacts > 0 {
+		fmt.Fprintf(ui.Stdout, "%d of %d contacts are online\n", nOnline, nContacts)
+	} else {
+		fmt.Fprintf(ui.Stdout, "You have no contacts :(\n")
+	}
+
+	if reqs := len(ui.Client.Contacts.Requests); reqs > 0 {
+		plural := ""
+		if reqs > 1 {
+			plural = "s"
+		}
+		fmt.Fprintf(ui.Stdout, "%d new contact request%s are waiting\n", reqs, plural)
+	}
 }
 
 func (ui *UI) ListContacts() {
@@ -176,10 +196,17 @@ func (ui *UI) ListContacts() {
 		for _, contact := range contacts {
 			unreadCount := contact.Conversation.UnreadCount()
 			if unreadCount > 0 {
-				fmt.Fprintf(ui.Stdout, "    \x1b[1m%s\x1b[0m (\x1b[1m%s\x1b[0m) -- \x1b[34;1m%d new messages\x1b[0m\n", contact.Data.Nickname, ui.PrefixForContact(contact), unreadCount)
+				fmt.Fprintf(ui.Stdout, "    \x1b[1m%s\x1b[0m (\x1b[1m%s\x1b[0m) -- \x1b[34;1m%d new messages\x1b[0m\n", contact.Data.Nickname, ui.PrefixForAddress(contact.Data.Address), unreadCount)
 			} else {
-				fmt.Fprintf(ui.Stdout, "    %s (\x1b[1m%s\x1b[0m)\n", contact.Data.Nickname, ui.PrefixForContact(contact))
+				fmt.Fprintf(ui.Stdout, "    %s (\x1b[1m%s\x1b[0m)\n", contact.Data.Nickname, ui.PrefixForAddress(contact.Data.Address))
 			}
+		}
+	}
+
+	if len(ui.Client.Contacts.Requests) > 0 {
+		fmt.Fprintf(ui.Stdout, "\x1b[contact requests received\x1b[39m\n")
+		for _, request := range ui.Client.Contacts.Requests {
+			fmt.Fprintf(ui.Stdout, "    %s (\x1b[1m%s\x1b[0m)\n", request.Address, ui.PrefixForAddress(request.Address))
 		}
 	}
 }
@@ -236,7 +263,7 @@ func (ui *UI) DeleteContact(params []string) {
 	}
 	contact := ui.Client.Contacts.ByAddress(params[0])
 	if contact == nil {
-		contact = ui.ContactByPrefix(params[0])
+		contact, _ = ui.EntityByPrefix(params[0])
 	}
 	if contact == nil {
 		fmt.Fprintf(ui.Stdout, "No contact with address %s\n", params[0])
@@ -388,34 +415,57 @@ func ColoredContactStatus(status ricochet.Contact_Status) string {
 	}
 }
 
-func (ui *UI) ContactByPrefix(prefix string) *Contact {
-	if len(prefix) < MinContactPrefix {
-		return nil
+func (ui *UI) EntityByPrefix(prefix string) (*Contact, *ricochet.ContactRequest) {
+	if len(prefix) < MinContactPrefix || len(prefix) > 16 {
+		return nil, nil
 	}
+
 	var contact *Contact
 	for _, c := range ui.Client.Contacts.Contacts {
 		host, _ := core.PlainHostFromAddress(c.Data.Address)
 		if prefix == host[:len(prefix)] {
 			if contact != nil {
 				// Ambiguous prefix
-				return nil
+				return nil, nil
 			}
 			contact = c
 		}
 	}
-	return contact
+
+	var request *ricochet.ContactRequest
+	for _, r := range ui.Client.Contacts.Requests {
+		host, _ := core.PlainHostFromAddress(r.Address)
+		if prefix == host[:len(prefix)] {
+			if contact != nil || request != nil {
+				return nil, nil
+			}
+			request = r
+		}
+	}
+
+	return contact, request
 }
 
-func (ui *UI) PrefixForContact(contact *Contact) string {
-	host, _ := core.PlainHostFromAddress(contact.Data.Address)
+func (ui *UI) PrefixForAddress(address string) string {
+	host, _ := core.PlainHostFromAddress(address)
 	prefix := host[:MinContactPrefix]
 
 	for _, c := range ui.Client.Contacts.Contacts {
-		if c == contact {
+		cHost, _ := core.PlainHostFromAddress(c.Data.Address)
+		if cHost == host {
 			continue
 		}
-		cHost, _ := core.PlainHostFromAddress(c.Data.Address)
 		for prefix == cHost[:len(prefix)] && len(prefix) < len(host) {
+			prefix = host[:len(prefix)+1]
+		}
+	}
+
+	for _, r := range ui.Client.Contacts.Requests {
+		rHost, _ := core.PlainHostFromAddress(r.Address)
+		if rHost == host {
+			continue
+		}
+		for prefix == rHost[:len(prefix)] && len(prefix) < len(host) {
 			prefix = host[:len(prefix)+1]
 		}
 	}
@@ -441,4 +491,57 @@ func (ui *UI) SetCurrentContact(contact *Contact) {
 		ui.Input.Config.Listener.(*conversationInputConfig).Remove()
 		ui.Input.SetConfig(ui.baseConfig)
 	}
+}
+
+func (ui *UI) ShowContactRequest(request *ricochet.ContactRequest) {
+	fmt.Fprintf(ui.Stdout, "\nSomeone would like to add you as a contact:\n\n")
+	fmt.Fprintf(ui.Stdout, "    Address:\t%s\n", request.Address)
+	// XXX Proper output sanitization here
+	if len(request.FromNickname) > 0 {
+		fmt.Fprintf(ui.Stdout, "    Name:\t%s\n", request.FromNickname)
+	}
+	if len(request.Text) > 0 {
+		fmt.Fprintf(ui.Stdout, "    Message:\t%s\n", request.Text)
+	}
+	fmt.Fprintf(ui.Stdout, "\n")
+	action, err := readline.Line("(a)ccept, (r)eject, or (w)ait: ")
+	if err != nil {
+		return
+	}
+
+	if strings.HasPrefix("reject", action) {
+		_, err := ui.Client.Backend.RejectInboundRequest(context.Background(), request)
+		if err != nil {
+			fmt.Fprintf(ui.Stdout, "Failed: %s\n", err)
+		}
+		return
+	} else if !strings.HasPrefix("accept", action) {
+		// Anything other than accept is wait
+		fmt.Fprintf(ui.Stdout, "Doing nothing.\n")
+		return
+	}
+
+	for {
+		nickname, err := readline.Line("nickname: ")
+		if err != nil {
+			return
+		} else if nickname == "" {
+			fmt.Fprintf(ui.Stdout, "Aborted.\n")
+			return
+		} else if !core.IsNicknameAcceptable(nickname) {
+			fmt.Fprintf(ui.Stdout, "Invalid nickname '%s'\n", nickname)
+			continue
+		} else {
+			request.FromNickname = nickname
+			break
+		}
+	}
+
+	_, err = ui.Client.Backend.AcceptInboundRequest(context.Background(), request)
+	if err != nil {
+		fmt.Fprintf(ui.Stdout, "Failed: %s\n", err)
+		return
+	}
+
+	fmt.Fprintf(ui.Stdout, "Accepted!\n")
 }

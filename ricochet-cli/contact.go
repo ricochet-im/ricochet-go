@@ -9,12 +9,14 @@ import (
 type ContactList struct {
 	Client   *Client
 	Contacts map[string]*Contact
+	Requests map[string]*ricochet.ContactRequest
 }
 
 func NewContactList(client *Client) *ContactList {
 	return &ContactList{
 		Client:   client,
 		Contacts: make(map[string]*Contact),
+		Requests: make(map[string]*ricochet.ContactRequest),
 	}
 }
 
